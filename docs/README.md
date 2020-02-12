@@ -117,7 +117,7 @@ A toy dataset (SAM file) is provided in the [examples/data](../examples/data) fo
 
 `mpirun` can be launched in a standard manner without using any job scheduling systems. For example:
 
-`mpirun -n 4 mpiMarkDup examples/data/HCC1187C_70K_READS.sam ${HOME}/mpiSORTExample -q 0 -d 1000 -v 4`
+`mpirun -n 4 mpiMD examples/data/HCC1187C_70K_READS.sam ${HOME}/mpiSORTExample -q 0 -d 1000 -v 4`
 
 If needed, a file with the server name in `-host` option can be provided to `mpirun`. We invite you to read the `mpirun` documentation for more details.
 
@@ -136,7 +136,7 @@ If needed, a file with the server name in `-host` option can be provided to `mpi
 #SBATCH -o STDOUT_FILE.%j.o
 #SBATCH -e STDERR_FILE.%j.e
 
-mpirun mpiMarkDup examples/data/HCC1187C_70K_READS.sam ${HOME}/mpiMarkDupExample -q 0 -d 1000 -v 4
+mpirun mpiMD examples/data/HCC1187C_70K_READS.sam ${HOME}/mpiMarkDupExample -q 0 -d 1000 -v 4
 
 ```
 
@@ -150,7 +150,7 @@ mpirun mpiMarkDup examples/data/HCC1187C_70K_READS.sam ${HOME}/mpiMarkDupExample
 #PBS -o STDOUT_FILE.%j.o
 #PBS -e STDERR_FILE.%j.e
 
-mpirun mpiMarkDup examples/data/HCC1187C_70K_READS.sam ${HOME}/mpiMarkDupExample -q 0 -d 1000 -v 4
+mpirun mpiMD examples/data/HCC1187C_70K_READS.sam ${HOME}/mpiMarkDupExample -q 0 -d 1000 -v 4
 
 ```
 
@@ -166,21 +166,24 @@ We don't recommend to use MPI with [NFS](https://en.wikipedia.org/wiki/Network_F
 
 ## Performance
 
-Obviously, the performance of `mpiSORT` depends on the computing infrastruture. Using the computing cluster provided by the [TGCC France Génomique](https://www.france-genomique.org/plateformes-et-equipements/plateforme-tgcc-arpajon/) (Broadwell architecture), we obtained the following performance sorting the [NA24631](ftp://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/data/ChineseTrio/HG005_NA24631_son/HG005_NA24631_son_HiSeq_300x/NHGRI_Illumina300X_Chinesetrio_novoalign_bams/) from [GIAB](https://github.com/genome-in-a-bottle/about_GIAB) which is a 300X Whole Genome:
+(In construction)
 
-
-* **20 minutes** with 512 jobs and with an efficiency of 70% (30% time is spent in IO) with a [Lustre](http://lustre.org/) configuration :
-    * `lfs setstripe -c 12 -S 4m` (for input)
-    * `lfs setstripe -c 12 -S 256m` (for output)
-
-* **10 minutes** with 1024 jobs with an efficiency of 60% (40% time is spent in IO) with a Lustre configuration :
-    * `lfs setstripe -c 12 -S 256m` (for input)
-    * `lfs setstripe -c 12 -S 256m` (for output)
-
-Because of the development design the programm is optimized for HPC architecture. This programm runs better on low latency network and parallel file system. 
 
 ## Algorithm
 
+First the programm sort the reads by genome's coordinates and extract discordant and unmapped (end and mate) reads with the same technics described in mpiSORT.
 
+Second the programm mark the duplicates for each chromosome and discordant reads according to Picard Markduplicate method. The unmapped and unmapped mates are not marked. To limit memory overhead we build a distributed perfect hash table (see perfectHash.c for details) for fragment list and end list. This way the memory usage is under the memory usage of mpiSort.
+
+Finally each chromosome is marked and compressed with bgzf and written down in the output folder.
+
+We test the reproducibility by comparing both pipelines :mpiMD and mpiSORT + Picard (MarkDuplicate).
+We use the same number of cpu for each pipeline. So far We obtain 100% reproducibility.
+
+If the number of cpu differs the reproducibility is not garantee. Indeed tie cases are solved using the index of the read in the sorted file. This index can differ with the number of cpu.
+
+This problem does not impact the results in the downstream analysis.
+
+In conclusion when you test reproducibility always take the same number of cpu. 
 
 
