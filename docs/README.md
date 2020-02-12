@@ -101,7 +101,7 @@ NA24631 sample is available here: ftp://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamp
 
 ### Cpu
 
-Due to the bitonic sorting, the algorithm is optimized for power of 2 number of CPU. Therefore, it is recommended to set the `-n` parameter of `mpirun` to 2, 4, 8, 16, 32, etc. in order to ensure for optimal performance. For example, `mpirun -n 4 mpiSORT examples/data/HCC1187C_70K_READS.sam ${HOME}/mpiSORTExample`
+Due to the bitonic sorting, the algorithm is optimized for power of 2 number of CPU. Therefore, it is recommended to set the `-n` parameter of `mpirun` to 2, 4, 8, 16, 32, etc. in order to ensure for optimal performance. For example, `mpirun -n 4 mpiMD examples/data/HCC1187C_70K_READS.sam -q 0 -d 0 -v 4 ${HOME}/mpiMarkDupExample`
 
 
 However, the `-n` parameter can be set to any other value but extra  MPI communications will be added to fit power of 2 required by the bitonic algorithm. In this case, additonal memory is needed for the rank 0 worker. This rank is responsible for collecting and dispatching the data before and after bitonic.
@@ -117,7 +117,7 @@ A toy dataset (SAM file) is provided in the [examples/data](../examples/data) fo
 
 `mpirun` can be launched in a standard manner without using any job scheduling systems. For example:
 
-`mpirun -n 4 mpiMD examples/data/HCC1187C_70K_READS.sam ${HOME}/mpiSORTExample -q 0 -d 1000 -v 4`
+`mpirun -n 4 mpiMD examples/data/HCC1187C_70K_READS.sam ${HOME}/mpiMarkDupExample -q 0 -d 1000 -v 4`
 
 If needed, a file with the server name in `-host` option can be provided to `mpirun`. We invite you to read the `mpirun` documentation for more details.
 
@@ -156,7 +156,7 @@ mpirun mpiMD examples/data/HCC1187C_70K_READS.sam ${HOME}/mpiMarkDupExample -q 0
 
 ## Parallel filesystems
 
-As the `mpiMarkDup` program uses MPI functions for reading and writing you can take advantage of a parallel file system to tackle the IOs bottleneck and speed-up the sorting of a SAM file. Using a parallel filesystem such as [Lustre](http://lustre.org/) or [BeeGFS](https://www.beegfs.io/) will be mandatory as long as the SAM file to sort is bigger and bigger.
+As the `mpiMarkDup` program uses MPI functions for reading and writing you can take advantage of a parallel file system to tackle the IOs bottleneck and speed-up the sorting and the marking of a SAM file. Using a parallel filesystem such as [Lustre](http://lustre.org/) or [BeeGFS](https://www.beegfs.io/) will be mandatory as long as the SAM file to sort is bigger and bigger.
 
 
 Note that for advanced users, it is even possible to fine tune the source code such that `mpiMarkDup` can optimally used the settings of the parallel filesystem on which you will run the program. Refer to the [Advanced](ADVANCED.md) guidelines to do so.

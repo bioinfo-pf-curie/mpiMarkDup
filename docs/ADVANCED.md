@@ -2,7 +2,7 @@
 
 As the programs use MPI functions for reading and writing you can take advantage of a parallel file system. To speed-up reading and writing you can set the striping of your data. The striping tells the number of file servers you want to use and the size of data blocks on each server. You can compare the striping of the file with the mapping process used in Hadoop. This is the way your data are distributed among the servers of your paralell filesystem. This kind of optimization accelerate drastically the IO operations.
 
-Standard software for sorting SAM file do not take into account the underlying distributed filesystem and low-latency interconnexion while `mpiSORT` does. Indeed, MPI improves IOs by means of parallelization. On parallel filesystem such as [Lustre](http://lustre.org/) or [GPFS](https://en.wikipedia.org/wiki/IBM_Spectrum_Scale), one way of accelerating IOs is to stripe them across servers. You can choose the number of servers with the striping factor and the size of chunks with the striping size. 
+Standard software for sorting SAM file do not take into account the underlying distributed filesystem and low-latency interconnexion while `mpiMArkDup` does. Indeed, MPI improves IOs by means of parallelization. On parallel filesystem such as [Lustre](http://lustre.org/) or [GPFS](https://en.wikipedia.org/wiki/IBM_Spectrum_Scale), one way of accelerating IOs is to stripe them across servers. You can choose the number of servers with the striping factor and the size of chunks with the striping size. 
 
 ## Lustre configuration
 
