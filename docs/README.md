@@ -1,0 +1,217 @@
+# Documentation
+
+* [Installation](#installation)
+* [Prerequisites](#prerequisites)
+* [Usage](#usage)
+    * [Input](#input)
+    * [Options](#options)
+    * [Output](#output)
+* [Informatic resources](#informatic-resources)
+    * [Memory](#memory)
+    * [Cpu](#cpu)
+* [Examples](#examples)
+    * [Standard](#standard)
+    * [Slurm](#slurm)
+    * [PBS/Torque](#pbstorque)
+* [Performance](#performance)
+* [Parallel filesystems](#parallel-filesystems)
+* [Algorithm](#algorithm)
+* [References](#references)
+
+
+## Installation
+
+Follow the [Installation](INSTALL.md) guidelines to compile and install `mpiMarkDup`.
+
+## Prerequisites
+
+As `mpiMarkDup` relies on the Message Passing Interface (MPI) standard, `mpirun` must be available to run the program. Several MPI implementations exist
+such as [mpich](https://www.mpich.org/), [open-mpi](https://www.open-mpi.org/) or [Intel® MPI Library](https://software.intel.com/en-us/mpi-library). The `mpirun` program must be available in your PATH.
+
+### Install mpirun on CentOS
+
+* for [open-mpi](https://www.open-mpi.org/): `sudo yum install openmpi openmpi-devel`
+* for [mpich](https://www.mpich.org/): `sudo yum install mpich`
+
+### Install mpirun on Ubuntu
+
+* for [open-mpi](https://www.open-mpi.org/): `sudo apt-get install openmpi-bin`
+* for [mpich](https://www.mpich.org/): `sudo apt-get install mpich`
+
+
+
+## Usage
+
+`mpiMarkDup` is executed with the `mpirun` program, for example:
+
+`mpirun -n cpu_number mpiMD input_sam output_dir -q 0 -d 1000 -v 4`
+
+The `-n` options passed to `mpirun` indicates the number of processes to run in parallel (this is basically the number of cores that will be used). For for details on how to choose the number processes, see the [Informatic resources](#informatic-resources) section.
+
+`mpiMarkDup` requires two mandatory arguments:
+
+* [Input](#input): the path to the SAM file to be sorted and marked
+* [Output](#output): the directory in which the results will be written
+
+### Input
+
+A SAM file produced by an aligner (such as [BWA](https://github.com/lh3/bwa)) with paired reads and compliant with the SAM format. Only paired reads are accepted so far.
+
+
+### Options
+
+* `-q INTEGER` filters the reads according to their quality. Reads quality under the threshold are ignored in the sorting results. Default is 0 (all reads are kept).
+* `-d INTEGER` is the optical distance for duplicates.
+* `-v INTEGER` is the level of the verbose.
+
+	0 is `LOG_OFF`
+	1 is `LOG_ERROR`
+	2 is `LOG_WARNING`
+	3 is `LOG_INFO (default)`
+	4 is `LOG_DEBUG`
+	5 is `LOG_TRACE` 
+
+### Output
+
+The output consists of gz files:
+* one per chromosome (e.g. chr11.gz)
+* one for discordant reads (discordant.gz): discordants reads are reads where one pair aligns on a chromosome and the other pair aligns on another chromosome
+* one for unmapped reads (unmapped.gz): unmapped reads are reads without coordinates on any chromosome
+
+Only discordant and chromosome files are marked.
+
+To index the SAM:
+`tabix -p sam chr11.gz`
+
+`tabix` is available from [Samtools](http://www.htslib.org/doc/tabix.html)
+
+To uncompress:
+`bgzip -d chr11.gz -c > chr11.sam`
+
+`bgzip` is available from [Samtools](http://www.htslib.org/doc/bgzip.html)
+
+## Informatic resources
+
+### Memory
+
+The total memory used during the marking is around one and a half the size of the SAM file.
+For example, to sort a 1.3TB SAM file (such as the [NA24631](ftp://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/data/ChineseTrio/HG005_NA24631_son/HG005_NA24631_son_HiSeq_300x/NHGRI_Illumina300X_Chinesetrio_novoalign_bams/) from [GIAB](https://github.com/genome-in-a-bottle/about_GIAB) which is a 300X Whole Genome (2x150-base) paired reads that we aligned with [mpiBWA](https://github.com/bioinfo-pf-curie/mpiBWA)), 1.7 TB of memory are required and splitted over 512 MPI workers (i.e. cores) that corresponds to makes 3.3 Gb of memory per core.
+
+NA24631 sample is available here: ftp://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/data/ChineseTrio/HG005_NA24631_son/HG005_NA24631_son_HiSeq_300x/NHGRI_Illumina300X_Chinesetrio_novoalign_bams
+
+### Cpu
+
+Due to the bitonic sorting, the algorithm is optimized for power of 2 number of CPU. Therefore, it is recommended to set the `-n` parameter of `mpirun` to 2, 4, 8, 16, 32, etc. in order to ensure for optimal performance. For example, `mpirun -n 4 mpiSORT examples/data/HCC1187C_70K_READS.sam ${HOME}/mpiSORTExample`
+
+
+However, the `-n` parameter can be set to any other value but extra  MPI communications will be added to fit power of 2 required by the bitonic algorithm. In this case, additonal memory is needed for the rank 0 worker. This rank is responsible for collecting and dispatching the data before and after bitonic.
+
+
+## Examples
+
+There are many ways to distribute and bind MPI jobs according to your architecture. We provide below several examples to launch MPI jobs in a standard manner or with a job scheduling system such as [Slurm](https://slurm.schedmd.com/sbatch.html) and [PBS/Torque](https://support.adaptivecomputing.com/support/documentation-index/torque-resource-manager-documentation/).
+
+A toy dataset (SAM file) is provided in the [examples/data](../examples/data) folder for testing the program. We test it with from 1 to 8 jobs and 2 nodes with a normal network and file system. You can use this sample to test the program.
+
+### Standard
+
+`mpirun` can be launched in a standard manner without using any job scheduling systems. For example:
+
+`mpirun -n 4 mpiMarkDup examples/data/HCC1187C_70K_READS.sam ${HOME}/mpiSORTExample -q 0 -d 1000 -v 4`
+
+If needed, a file with the server name in `-host` option can be provided to `mpirun`. We invite you to read the `mpirun` documentation for more details.
+
+
+### Slurm
+
+```shell
+#! /bin/bash
+#SBATCH -J MPIMARKDUP_MYSAM_4_JOBS
+#SBATCH -N 2                       	# Ask 2 nodes
+#SBATCH -n 4                       	# Total number of cores
+#SBATCH -c 1			   	# use 1 core per mpi job
+#SBATCH --tasks-per-node=2         	# Ask 2 cores per node
+#SBATCH --mem-per-cpu=${MEM}	   	# See Memory ressources
+#SBATCH -t 01:00:00
+#SBATCH -o STDOUT_FILE.%j.o
+#SBATCH -e STDERR_FILE.%j.e
+
+mpirun mpiMarkDup examples/data/HCC1187C_70K_READS.sam ${HOME}/mpiMarkDupExample -q 0 -d 1000 -v 4
+
+```
+
+### PBS/Torque
+
+```shell
+#! /bin/bash
+#PBS -N MPISORT_MYSAM_4_JOBS
+#PBS -l	nodes=2:ppn=2:mem=${MEM}     	# Ask 2 nodes and 2 jobs per node
+#PBS -l walltime=24:00:00
+#PBS -o STDOUT_FILE.%j.o
+#PBS -e STDERR_FILE.%j.e
+
+mpirun mpiMarkDup examples/data/HCC1187C_70K_READS.sam ${HOME}/mpiMarkDupExample -q 0 -d 1000 -v 4
+
+```
+
+## Parallel filesystems
+
+As the `mpiMarkDup` program uses MPI functions for reading and writing you can take advantage of a parallel file system to tackle the IOs bottleneck and speed-up the sorting of a SAM file. Using a parallel filesystem such as [Lustre](http://lustre.org/) or [BeeGFS](https://www.beegfs.io/) will be mandatory as long as the SAM file to sort is bigger and bigger.
+
+
+Note that for advanced users, it is even possible to fine tune the source code such that `mpiMarkDup` can optimally used the settings of the parallel filesystem on which you will run the program. Refer to the [Advanced](ADVANCED.md) guidelines to do so.
+
+
+We don't recommend to use MPI with [NFS](https://en.wikipedia.org/wiki/Network_File_System) (it works but it does not scale very well).
+
+## Performance
+
+Obviously, the performance of `mpiSORT` depends on the computing infrastruture. Using the computing cluster provided by the [TGCC France Génomique](https://www.france-genomique.org/plateformes-et-equipements/plateforme-tgcc-arpajon/) (Broadwell architecture), we obtained the following performance sorting the [NA24631](ftp://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/data/ChineseTrio/HG005_NA24631_son/HG005_NA24631_son_HiSeq_300x/NHGRI_Illumina300X_Chinesetrio_novoalign_bams/) from [GIAB](https://github.com/genome-in-a-bottle/about_GIAB) which is a 300X Whole Genome:
+
+
+* **20 minutes** with 512 jobs and with an efficiency of 70% (30% time is spent in IO) with a [Lustre](http://lustre.org/) configuration :
+    * `lfs setstripe -c 12 -S 4m` (for input)
+    * `lfs setstripe -c 12 -S 256m` (for output)
+
+* **10 minutes** with 1024 jobs with an efficiency of 60% (40% time is spent in IO) with a Lustre configuration :
+    * `lfs setstripe -c 12 -S 256m` (for input)
+    * `lfs setstripe -c 12 -S 256m` (for output)
+
+Because of the development design the programm is optimized for HPC architecture. This programm runs better on low latency network and parallel file system. 
+
+## Algorithm
+
+Sorting a file is all about IO's and shuffling (or movements) of data. Therefore, we developed a program that capitalizes on parallel and distributed file system in order to overcome the bottlenecks encountered with traditionnal tools to sort large sequencing data. Our approach relies on message passing interface paradigm (MPI) and distributed memory available on high computing performance architecture.
+
+The program we implemented in based on the major components: the bitonic-sort, the shuffling of the data and the distributed cache.
+
+The [bitonic sort](https://en.wikipedia.org/wiki/Bitonic_sorter) is a real parallel sorting algorithm that works on parallel architectures. The complexity of the bitonic is of (log(n))^2 instead of nlog(n) with the parallel merge-sort. The bitonic sorter has been developped using MPI message passing primitives and is inspired from the book of [Peter S. Pacheco "Parallel programming with MPI".](https://www.cs.usfca.edu/~peter/ppmpi/)
+
+The shuffling of the data is done through the Bruck method. This method has the advantage of avoiding the shuffle bottleneck (The All2all). Bruck is a log(N) method and scale very well for distributed architectures.
+
+For more details, see the [References](#references) section.
+
+## References
+
+Original Bruck algorithm:
+
+* Bruck et al. (1997) [Efficient Algorithms for All-to-All Communications in Multiport Message-Passing Systems](https://dl.acm.org/doi/10.1109/71.642949). EEE Transactions on Parallel and Distributed Systems, 1997 ([pdf](http://authors.library.caltech.edu/12348/1/BRUieeetpds97.pdf)).
+
+Modified versions of the Bruch algorithm:
+
+* Jesper Larsson Träff, Antoine  Rougier and Sascha  Hunold, [Implementing a Classic:Zero-copy All-to-all Communication with MPI Datatypes](https://dl.acm.org/doi/10.1145/2597652.2597662). ICS '14: Proceedings of the 28th ACM international conference on Supercomputing, 2014 ([pdf](http://hunoldscience.net/paper/classical_sahu_2014.pdf)).
+
+* Rajeev Thakur, Rolf  Rabenseifner and William Gropp, [Optimization of Collective Communication Operations in MPICH](https://dl.acm.org/doi/10.1177/1094342005051521). International Journal of High Performance Computing Applications, 2005 ([pdf](http://www.mcs.anl.gov/~thakur/papers/ijhpca-coll.pdf)).
+
+Description of the SAM format:
+
+* Li H. et al, [The sequence alignment/map format and SAMtools](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC2723002/). Bioinformatics, 2009.
+
+
+* [samtools](https://github.com/lh3/samtools) source code. The `bgzf.c` program was used and included in the `mpiSORT` source code. [samtools](https://github.com/lh3/samtools) is provided under *The MIT License,  Copyright (c) 2008 Broad Institute / Massachusetts Institute of Technology*.
+
+Presentation about our program:
+
+* Journées nationales du DEVeloppement logiciel, 2015 [pdf](http://devlog.cnrs.fr/_media/jdev2015/poster_jdev2015_institut_curie_hpc_sequencage_jarlier.pdf?id=jdev2015%3Aposters&cache=cache)
+* OpenSFS conference Lustre LAD, 2016 [pdf](http://www.eofs.eu/_media/events/lad16/03_speedup_whole_genome_analysis_jarlier.pdf)
+* Journées nationales du DEVeloppement logiciel, 2017 [pdf](http://devlog.cnrs.fr/_media/jdev2017/poster_jdev2017_hpcngs_frederic_jarlier.pdf?id=jdev2017%3Aposters&cache=cache)
