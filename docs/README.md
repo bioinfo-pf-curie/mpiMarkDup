@@ -62,14 +62,14 @@ A SAM file produced by an aligner (such as [BWA](https://github.com/lh3/bwa)) wi
 
 * `-q INTEGER` filters the reads according to their quality. Reads quality under the threshold are ignored in the sorting results. Default is 0 (all reads are kept).
 * `-d INTEGER` is the optical distance for duplicates.
-* `-v INTEGER` is the level of the verbose.
+* `-v INTEGER` is the level of the verbose:
 
-	0 is `LOG_OFF`
-	1 is `LOG_ERROR`
-	2 is `LOG_WARNING`
-	3 is `LOG_INFO (default)`
-	4 is `LOG_DEBUG`
-	5 is `LOG_TRACE` 
+	- 0 is `LOG_OFF`
+	- 1 is `LOG_ERROR`
+	- 2 is `LOG_WARNING`
+	- 3 is `LOG_INFO (default)`
+	- 4 is `LOG_DEBUG`
+	- 5 is `LOG_TRACE` 
 
 ### Output
 
@@ -94,7 +94,7 @@ To uncompress:
 
 ### Memory
 
-The total memory used during the marking is around one and a half the size of the SAM file.
+Like for the sorting the total memory used during the marking is around one and a half the size of the SAM file.
 For example, to sort a 1.3TB SAM file (such as the [NA24631](ftp://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/data/ChineseTrio/HG005_NA24631_son/HG005_NA24631_son_HiSeq_300x/NHGRI_Illumina300X_Chinesetrio_novoalign_bams/) from [GIAB](https://github.com/genome-in-a-bottle/about_GIAB) which is a 300X Whole Genome (2x150-base) paired reads that we aligned with [mpiBWA](https://github.com/bioinfo-pf-curie/mpiBWA)), 1.7 TB of memory are required and splitted over 512 MPI workers (i.e. cores) that corresponds to makes 3.3 Gb of memory per core.
 
 NA24631 sample is available here: ftp://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/data/ChineseTrio/HG005_NA24631_son/HG005_NA24631_son_HiSeq_300x/NHGRI_Illumina300X_Chinesetrio_novoalign_bams
@@ -144,7 +144,7 @@ mpirun mpiMarkDup examples/data/HCC1187C_70K_READS.sam ${HOME}/mpiMarkDupExample
 
 ```shell
 #! /bin/bash
-#PBS -N MPISORT_MYSAM_4_JOBS
+#PBS -N MPIMARKDUP_MYSAM_4_JOBS
 #PBS -l	nodes=2:ppn=2:mem=${MEM}     	# Ask 2 nodes and 2 jobs per node
 #PBS -l walltime=24:00:00
 #PBS -o STDOUT_FILE.%j.o
@@ -181,37 +181,6 @@ Because of the development design the programm is optimized for HPC architecture
 
 ## Algorithm
 
-Sorting a file is all about IO's and shuffling (or movements) of data. Therefore, we developed a program that capitalizes on parallel and distributed file system in order to overcome the bottlenecks encountered with traditionnal tools to sort large sequencing data. Our approach relies on message passing interface paradigm (MPI) and distributed memory available on high computing performance architecture.
-
-The program we implemented in based on the major components: the bitonic-sort, the shuffling of the data and the distributed cache.
-
-The [bitonic sort](https://en.wikipedia.org/wiki/Bitonic_sorter) is a real parallel sorting algorithm that works on parallel architectures. The complexity of the bitonic is of (log(n))^2 instead of nlog(n) with the parallel merge-sort. The bitonic sorter has been developped using MPI message passing primitives and is inspired from the book of [Peter S. Pacheco "Parallel programming with MPI".](https://www.cs.usfca.edu/~peter/ppmpi/)
-
-The shuffling of the data is done through the Bruck method. This method has the advantage of avoiding the shuffle bottleneck (The All2all). Bruck is a log(N) method and scale very well for distributed architectures.
-
-For more details, see the [References](#references) section.
-
-## References
-
-Original Bruck algorithm:
-
-* Bruck et al. (1997) [Efficient Algorithms for All-to-All Communications in Multiport Message-Passing Systems](https://dl.acm.org/doi/10.1109/71.642949). EEE Transactions on Parallel and Distributed Systems, 1997 ([pdf](http://authors.library.caltech.edu/12348/1/BRUieeetpds97.pdf)).
-
-Modified versions of the Bruch algorithm:
-
-* Jesper Larsson Träff, Antoine  Rougier and Sascha  Hunold, [Implementing a Classic:Zero-copy All-to-all Communication with MPI Datatypes](https://dl.acm.org/doi/10.1145/2597652.2597662). ICS '14: Proceedings of the 28th ACM international conference on Supercomputing, 2014 ([pdf](http://hunoldscience.net/paper/classical_sahu_2014.pdf)).
-
-* Rajeev Thakur, Rolf  Rabenseifner and William Gropp, [Optimization of Collective Communication Operations in MPICH](https://dl.acm.org/doi/10.1177/1094342005051521). International Journal of High Performance Computing Applications, 2005 ([pdf](http://www.mcs.anl.gov/~thakur/papers/ijhpca-coll.pdf)).
-
-Description of the SAM format:
-
-* Li H. et al, [The sequence alignment/map format and SAMtools](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC2723002/). Bioinformatics, 2009.
 
 
-* [samtools](https://github.com/lh3/samtools) source code. The `bgzf.c` program was used and included in the `mpiSORT` source code. [samtools](https://github.com/lh3/samtools) is provided under *The MIT License,  Copyright (c) 2008 Broad Institute / Massachusetts Institute of Technology*.
 
-Presentation about our program:
-
-* Journées nationales du DEVeloppement logiciel, 2015 [pdf](http://devlog.cnrs.fr/_media/jdev2015/poster_jdev2015_institut_curie_hpc_sequencage_jarlier.pdf?id=jdev2015%3Aposters&cache=cache)
-* OpenSFS conference Lustre LAD, 2016 [pdf](http://www.eofs.eu/_media/events/lad16/03_speedup_whole_genome_analysis_jarlier.pdf)
-* Journées nationales du DEVeloppement logiciel, 2017 [pdf](http://devlog.cnrs.fr/_media/jdev2017/poster_jdev2017_hpcngs_frederic_jarlier.pdf?id=jdev2017%3Aposters&cache=cache)
