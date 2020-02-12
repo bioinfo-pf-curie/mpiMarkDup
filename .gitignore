@@ -14,4 +14,5 @@ missing
 -*.tar.gz
 *.o
 src/Makefile.in
+src/Makefile
 stamp-h1
