@@ -44,7 +44,7 @@ such as [mpich](https://www.mpich.org/), [open-mpi](https://www.open-mpi.org/) o
 
 `mpiMarkDup` is executed with the `mpirun` program, for example:
 
-`mpirun -n cpu_number mpiMD input_sam output_dir -q 0 -d 1000 -v 4`
+`mpirun -n cpu_number mpiMarkDup input_sam output_dir -q 0 -d 1000 -v 4`
 
 The `-n` options passed to `mpirun` indicates the number of processes to run in parallel (this is basically the number of cores that will be used). For for details on how to choose the number processes, see the [Informatic resources](#informatic-resources) section.
 
@@ -101,7 +101,7 @@ NA24631 sample is available here: ftp://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamp
 
 ### Cpu
 
-Due to the bitonic sorting, the algorithm is optimized for power of 2 number of CPU. Therefore, it is recommended to set the `-n` parameter of `mpirun` to 2, 4, 8, 16, 32, etc. in order to ensure for optimal performance. For example, `mpirun -n 4 mpiMD examples/data/HCC1187C_70K_READS.sam -q 0 -d 0 -v 4 ${HOME}/mpiMarkDupExample`
+Due to the bitonic sorting, the algorithm is optimized for power of 2 number of CPU. Therefore, it is recommended to set the `-n` parameter of `mpirun` to 2, 4, 8, 16, 32, etc. in order to ensure for optimal performance. For example, `mpirun -n 4 mpiMarkDup examples/data/HCC1187C_70K_READS.sam -q 0 -d 0 -v 4 ${HOME}/mpiMarkDupExample`
 
 
 However, the `-n` parameter can be set to any other value but extra  MPI communications will be added to fit power of 2 required by the bitonic algorithm. In this case, additonal memory is needed for the rank 0 worker. This rank is responsible for collecting and dispatching the data before and after bitonic.
@@ -117,7 +117,7 @@ A toy dataset (SAM file) is provided in the [examples/data](../examples/data) fo
 
 `mpirun` can be launched in a standard manner without using any job scheduling systems. For example:
 
-`mpirun -n 4 mpiMD examples/data/HCC1187C_70K_READS.sam ${HOME}/mpiMarkDupExample -q 0 -d 1000 -v 4`
+`mpirun -n 4 mpiMarkDup examples/data/HCC1187C_70K_READS.sam ${HOME}/mpiMarkDupExample -q 0 -d 1000 -v 4`
 
 If needed, a file with the server name in `-host` option can be provided to `mpirun`. We invite you to read the `mpirun` documentation for more details.
 
@@ -136,7 +136,7 @@ If needed, a file with the server name in `-host` option can be provided to `mpi
 #SBATCH -o STDOUT_FILE.%j.o
 #SBATCH -e STDERR_FILE.%j.e
 
-mpirun mpiMD examples/data/HCC1187C_70K_READS.sam ${HOME}/mpiMarkDupExample -q 0 -d 1000 -v 4
+mpirun mpiMarkDup examples/data/HCC1187C_70K_READS.sam ${HOME}/mpiMarkDupExample -q 0 -d 1000 -v 4
 
 ```
 
@@ -150,7 +150,7 @@ mpirun mpiMD examples/data/HCC1187C_70K_READS.sam ${HOME}/mpiMarkDupExample -q 0
 #PBS -o STDOUT_FILE.%j.o
 #PBS -e STDERR_FILE.%j.e
 
-mpirun mpiMD examples/data/HCC1187C_70K_READS.sam ${HOME}/mpiMarkDupExample -q 0 -d 1000 -v 4
+mpirun mpiMarkDup examples/data/HCC1187C_70K_READS.sam ${HOME}/mpiMarkDupExample -q 0 -d 1000 -v 4
 
 ```
 
@@ -177,7 +177,7 @@ Second the programm mark the duplicates for each chromosome and discordant reads
 
 Finally each chromosome is marked and compressed with bgzf and written down in the output folder.
 
-We test the reproducibility by comparing both pipelines :mpiMD and mpiSORT + Picard (MarkDuplicate).
+We test the reproducibility by comparing both pipelines :mpiMarkDup and mpiSORT + Picard (MarkDuplicate).
 We use the same number of cpu for each pipeline. So far We obtain 100% reproducibility.
 
 If the number of cpu differs the reproducibility is not garantee. Indeed tie cases are solved using the index of the read in the sorted file. This index can differ with the number of cpu.

@@ -1,12 +1,12 @@
 
-bin_PROGRAMS = mpiMD
-noinst_HEADERS = $(mpiMDHDR) $(mpiSortHDR)
+bin_PROGRAMS = mpiMarkDup
+noinst_HEADERS = $(mpiMarkDupHDR) $(mpiSortHDR)
 
-mpiMD_SOURCES = $(mpiMDSRC) $(mpiSortSRC)
+mpiMarkDup_SOURCES = $(mpiMarkDupSRC) $(mpiSortSRC)
 
-mpiMDSRC = mark_duplicates.c mark_duplicates_discordant.c createLBList.c perfectHash.c log.c mpiMD_utils.c reads.c llist.c
+mpiMarkDupSRC = mark_duplicates.c mark_duplicates_discordant.c createLBList.c perfectHash.c log.c mpiMD_utils.c reads.c llist.c
 
-mpiMDHDR = mark_duplicates.h mark_duplicates_discordant.h createLBList.h perfectHash.h log.h mpiMD_utils.h common.h reads.h llist.h
+mpiMarkDupHDR = mark_duplicates.h mark_duplicates_discordant.h createLBList.h perfectHash.h log.h mpiMD_utils.h common.h reads.h llist.h
 
 mpiSortSRC = mpiSort.c mpiSort_utils.c mergeSort.c parabitonicsort.c \
 	parabitonicsort2.c parabitonicsort3.c qksort.c parser.c \
