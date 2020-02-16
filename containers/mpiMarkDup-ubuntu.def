@@ -10,6 +10,7 @@ Stage: build
     apt-get install -y git automake openmpi-common libopenmpi-dev make zlib1g-dev libssl-dev
     git clone https://github.com/bioinfo-pf-curie/mpiMarkDup.git
     cd mpiMarkDup
+    git checkout devel
     aclocal
     autoconf
     automake --add-missing
@@ -26,7 +27,7 @@ Stage: final
 
 %post
     apt-get update
-    apt-get install -y libopenmpi-dev
+    apt-get install -y libopenmpi-dev libssl-dev
     apt-get clean
 
 %environment

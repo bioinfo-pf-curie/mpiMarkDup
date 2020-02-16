@@ -24,7 +24,7 @@ Stage: final
     /opt/mpiMarkDup /opt/mpiMarkDup
 
 %post
-    yum install -y mpich
+    yum install -y mpich openssl-devel
     yum clean all
 
 %environment
