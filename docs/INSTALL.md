@@ -11,19 +11,17 @@
 
 The MPI compiler but be available in your PATH or set with the CC environment variable.
 
-If you do not have automake 1.15 but a former version (such as 1.13), you can edit in the `configure.ac` file and change the line `AM_INIT_AUTOMAKE([1.15 foreign -Wall])` with `AM_INIT_AUTOMAKE([1.13 foreign -Wall])`.
-
-If `automake` and `autoconf` have been installed in custom directories, be sure their are available in your PATH:
-
-`export PATH=path_to_automake/automake-1.15/bin:path_to_autoconf/autoconf-2.69/bin:${PATH}`
-
-If needed, you can set your PATH according to your configuration directly in your `${HOME}/.bashrc` file.
-
-
 Custom options can be used with `configure` such as `--prefix` to set the destination installation path or `CC` for the MPI compiler, for example:
 `./configure CC=mpi_bin_path --prefix`
 
 This should be only what you need to know about how to use `./configure` but if you are interested, more details are available in the [README-configure](README-configure) and on the command line `./configure --help`.
+
+If `automake` and `autoconf` have been installed in custom directories, be sure their are available in your PATH:
+`export PATH=path_to_automake/automake-1.13/bin:path_to_autoconf/autoconf-2.69/bin:${PATH}`
+
+If needed, you can set your PATH according to your configuration directly in your `${HOME}/.bashrc` file.
+
+If you have automake 1.15  you can edit in the `configure.ac` file and change the line `AM_INIT_AUTOMAKE([1.13 foreign -Wall])` with `AM_INIT_AUTOMAKE([1.15 foreign -Wall])`.
 
 
 ## Build from the git repository
