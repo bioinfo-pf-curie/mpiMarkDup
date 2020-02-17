@@ -18,7 +18,7 @@
 
 /*
    Module:
-    sort_any_dim.c
+    sortAnyDim.c
 
   Authors:
     Frederic Jarlier, 	Institut Curie
@@ -51,11 +51,11 @@
 #include "parser.h"
 #include "preWrite.h"
 #include "write.h"
-#include "mpiSort_utils.h"
-#include "write_utils.h"
+#include "mpiSortUtils.h"
+#include "writeUtils.h"
 #include "qksort.h"
-#include "parabitonicsort.h"
-#include "mpiSort_utils.h"
+#include "parallelBitonicSort.h"
+#include "mpiSortUtils.h"
 
 #include "log.h"
 

@@ -40,11 +40,11 @@
 #include "write.h"
 #include "bgzf.h"
 #include "bgzf.c"
-#include "mpiSort_utils.h"
-#include "parabitonicsort2.h"
+#include "mpiSortUtils.h"
+#include "parallelBitonicSort2.h"
 
-#include "mark_duplicates.h"
-#include "mark_duplicates_discordant.h"
+#include "markDuplicates.h"
+#include "markDuplicatesDiscordant.h"
 #include "createLBList.h"
 #include "log.h"
 

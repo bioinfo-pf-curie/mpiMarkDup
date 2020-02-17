@@ -7,7 +7,7 @@
 #include <mpi.h>
 
 #include "common.h"
-#include "mpiMD_utils.h"
+#include "mpiMarkDuplicatesUtils.h"
 
 typedef struct {
     int x;

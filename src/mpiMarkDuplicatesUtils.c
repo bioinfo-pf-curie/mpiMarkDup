@@ -22,7 +22,7 @@
     Firmain Martin,     Paris Descartes University
 */
 
-#include "mpiMD_utils.h"
+#include "mpiMarkDuplicatesUtils.h"
 
 
 /**

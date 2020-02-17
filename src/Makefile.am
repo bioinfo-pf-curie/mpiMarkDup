@@ -4,18 +4,18 @@ noinst_HEADERS = $(mpiMarkDupHDR) $(mpiSortHDR)
 
 mpiMarkDup_SOURCES = $(mpiMarkDupSRC) $(mpiSortSRC)
 
-mpiMarkDupSRC = mark_duplicates.c mark_duplicates_discordant.c createLBList.c perfectHash.c log.c mpiMD_utils.c reads.c llist.c
+mpiMarkDupSRC = markDuplicates.c markDuplicatesDiscordant.c createLBList.c perfectHash.c log.c mpiMarkDuplicatesUtils.c reads.c llist.c
 
-mpiMarkDupHDR = mark_duplicates.h mark_duplicates_discordant.h createLBList.h perfectHash.h log.h mpiMD_utils.h common.h reads.h llist.h
+mpiMarkDupHDR = markDuplicates.h markDuplicatesDiscordant.h createLBList.h perfectHash.h log.h mpiMarkDuplicatesUtils.h common.h reads.h llist.h
 
-mpiSortSRC = mpiSort.c mpiSort_utils.c mergeSort.c parabitonicsort.c \
-	parabitonicsort2.c parabitonicsort3.c qksort.c parser.c \
-	tokenizer.c preWrite.c write.c  write_utils.c sort_any_dim.c  
+mpiSortSRC = mpiSort.c mpiSortUtils.c mergeSort.c parallelBitonicSort.c \
+	parallelBitonicSort2.c parallelBitonicSort3.c qksort.c parser.c \
+	tokenizer.c preWrite.c write.c  writeUtils.c sortAnyDim.c  
 
-mpiSortHDR = mpiSort_utils.h mergeSort.h parabitonicsort.h \
-	parabitonicsort2.h parabitonicsort3.h qksort.h \
-	parser.h tokenizer.h preWrite.h write.h write_utils.h \
-	bgzf.c bgzf.h khash.h sort_any_dim.h \
+mpiSortHDR = mpiSortUtils.h mergeSort.h parallelBitonicSort.h \
+	parallelBitonicSort2.h parallelBitonicSort3.h qksort.h \
+	parser.h tokenizer.h preWrite.h write.h writeUtils.h \
+	bgzf.c bgzf.h khash.h sortAnyDim.h \
 	compat.h 
 
 AM_CFLAGS= -g -O2 -Wall -Wextra -std=gnu99 

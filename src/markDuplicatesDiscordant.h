@@ -15,7 +15,7 @@
 
 /*
    Module:
-     mark_duplicates.h
+     markDuplicatesDiscordant.h
      
    Authors:
     Frederic Jarlier,   Institut Curie
@@ -34,13 +34,13 @@
 
 #include <mpi.h>
 
-#include "mpiMD_utils.h"
+#include "mpiMarkDuplicatesUtils.h"
 #include "perfectHash.h"
 #include "reads.h"
 #include "parser.h"
 #include "llist.h"
 #include "createLBList.h"
-#include "mark_duplicates.h"
+#include "markDuplicates.h"
  
 readInfo *readParsingDiscordant (char *sam_buff, 
                                 Interval *intervalByProc, 

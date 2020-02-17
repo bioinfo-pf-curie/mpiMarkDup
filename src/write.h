@@ -41,8 +41,8 @@
 #include <mpi.h>
 
 #include "qksort.h"
-#include "write_utils.h"
-#include "parabitonicsort.h"
+#include "writeUtils.h"
+#include "parallelBitonicSort.h"
 
 void writeSam(
 		int rank,

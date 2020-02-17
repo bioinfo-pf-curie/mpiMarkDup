@@ -32,7 +32,7 @@
  **/
 
 #define _GNU_SOURCE
-#include "mark_duplicates.h"
+#include "markDuplicates.h"
 #include "createLBList.h"
 #include <malloc.h>
 #include <string.h>

@@ -18,7 +18,7 @@
 
 /*
    Module:
-     mpiSort_utils.h
+     mpiSortUtils.h
 
    Authors:
     Frederic Jarlier, 	Institut Curie

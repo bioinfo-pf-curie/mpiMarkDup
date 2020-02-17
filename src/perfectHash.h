@@ -46,7 +46,7 @@
 #include <mpi.h>
 
 #include "reads.h"
-#include "mpiMD_utils.h"
+#include "mpiMarkDuplicatesUtils.h"
 #include "log.h"
 
 typedef struct {

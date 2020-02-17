@@ -58,12 +58,12 @@
 #include "parser.h"
 #include "preWrite.h"
 #include "write.h"
-#include "sort_any_dim.h"
-#include "mpiSort_utils.h"
-#include "write_utils.h"
+#include "sortAnyDim.h"
+#include "mpiSortUtils.h"
+#include "writeUtils.h"
 #include "qksort.h"
-#include "parabitonicsort2.h"
-#include "parabitonicsort3.h"
+#include "parallelBitonicSort2.h"
+#include "parallelBitonicSort3.h"
 
 #include "log.h"
 

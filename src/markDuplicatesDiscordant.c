@@ -15,7 +15,7 @@
 
 /*
    Module:
-    mark_duplicates.c
+    markDuplicates.c
 
    Authors:
     Frederic Jarlier,                     Institut Curie
@@ -33,8 +33,8 @@
 
 #define _GNU_SOURCE
 
-#include "mark_duplicates_discordant.h"
-#include "mark_duplicates.h"
+#include "markDuplicatesDiscordant.h"
+#include "markDuplicates.h"
 #include "createLBList.h"
 #include <string.h>
 #include <math.h>

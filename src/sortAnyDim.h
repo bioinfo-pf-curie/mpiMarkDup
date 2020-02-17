@@ -18,7 +18,7 @@
 
 /*
    Module:
-    sort_any_dim.h
+    sortAnyDim.h
 
    	Authors:
 
@@ -39,8 +39,8 @@
 #include <mpi.h>
 
 #include "qksort.h"
-#include "write_utils.h"
-#include "parabitonicsort.h"
+#include "writeUtils.h"
+#include "parallelBitonicSort.h"
 
 
 void parallel_sort_any_dim(						//dimensions for parabitonic

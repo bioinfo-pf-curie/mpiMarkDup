@@ -15,7 +15,7 @@
 
 /*
    Module:
-     mark_duplicates.h
+     markDuplicates.h
      
    Authors:
     Frederic Jarlier,   Institut Curie
@@ -34,7 +34,7 @@
 
 #include <mpi.h>
 
-#include "mpiMD_utils.h"
+#include "mpiMarkDuplicatesUtils.h"
 #include "perfectHash.h"
 #include "reads.h"
 #include "parser.h"

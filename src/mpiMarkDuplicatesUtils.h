@@ -15,7 +15,7 @@
 
 /*
    Module:
-     mpiMD_utils.h
+     mpiMarkDuplicatesUtils.h
      
    Authors:
     Frederic Jarlier,   Institut Curie

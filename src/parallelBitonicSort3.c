@@ -18,9 +18,8 @@
 
 /*
    Module:
-     parabitonicsort3.c
+     parallelBitonicSort3.c
 
-   Authors:
     Authors:
     Frederic Jarlier, 	Institut Curie
 	Nicolas Joly, 		Institut Pasteur
@@ -66,7 +65,7 @@
 
 #include "compat.h"
 
-#include "parabitonicsort3.h"
+#include "parallelBitonicSort3.h"
 
 // we limit to 1gb per proc
 
