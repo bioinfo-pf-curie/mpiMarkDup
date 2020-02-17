@@ -171,19 +171,19 @@ We don't recommend to use MPI with [NFS](https://en.wikipedia.org/wiki/Network_F
 
 ## Algorithm
 
-First the programm sort the reads by genome's coordinates and extract discordant and unmapped (end and mate) reads with the same technics described in mpiSORT.
+Firstly, the program sorts the reads by genome position and extract discordant and unmapped (end and mate) reads with the same method described in [mpiSORT](https://github.com/bioinfo-pf-curie/mpiSORT).
 
-Second the programm mark the duplicates for each chromosome and discordant reads according to Picard Markduplicate method. The unmapped and unmapped mates are not marked. To limit memory overhead we build a distributed perfect hash table (see perfectHash.c for details) for fragment list and end list. This way the memory usage is under the memory usage of mpiSort.
+Secondly, the program marks the duplicated reads for each chromosome and discordant reads according to Picard Markduplicate method. The unmapped and unmapped mates are not marked. To limit memory overhead, we build a distributed perfect hash table (see [perfectHash.c](../src/perfectHash.c) for details) for fragment list and end list. This way the memory usage is under the memory usage of [mpiSORT](https://github.com/bioinfo-pf-curie/mpiSORT).
 
-Finally each chromosome is marked and compressed with bgzf and written down in the output folder.
+Finally, each chromosome is marked and compressed with bgzf and written down in the output folder.
 
-We test the reproducibility by comparing both pipelines :mpiMarkDup and mpiSORT + Picard (MarkDuplicate).
-We use the same number of cpu for each pipeline. So far We obtain 100% reproducibility.
+We test the reproducibility by comparing both pipelines: mpiMarkDup and [mpiSORT](https://github.com/bioinfo-pf-curie/mpiSORT) + Picard (MarkDuplicate).
+We use the same number of cpu for each pipeline and we obtained the same results.
 
-If the number of cpu differs the reproducibility is not garantee. Indeed tie cases are solved using the index of the read in the sorted file. This index can differ with the number of cpu.
+If the number of cpu differs, then the reproducibility is not garanted. Indeed, tie cases are solved using the index of the read in the sorted file. This index can differ with the number of cpu.
 
 This problem does not impact the results in the downstream analysis.
 
-In conclusion when you test reproducibility always take the same number of cpu. 
+In conclusion when you test reproducibility always take the same number of cpu.
 
 
