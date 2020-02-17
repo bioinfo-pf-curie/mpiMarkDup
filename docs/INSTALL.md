@@ -6,7 +6,7 @@
 * [zlib](https://zlib.net/)
 * [openssl](https://www.openssl.org/)
 * [autoconf](https://www.gnu.org/software/autoconf/)
-* [automake 1.15](https://www.gnu.org/software/automake/)
+* [automake 1.13](https://www.gnu.org/software/automake/)
 * [make](https://www.gnu.org/software/make/)
 
 The MPI compiler but be available in your PATH or set with the CC environment variable.
@@ -30,7 +30,7 @@ If you have automake 1.15  you can edit in the `configure.ac` file and change th
 git clone https://github.com/bioinfo-pf-curie/mpiMarkDup.git
 cd mpiMarkDup
 # Checkout the branch of the version you want to install, for example:
-# git checkout version-1.0.0
+# git checkout version-1.0
 aclocal
 autoconf
 automake --add-missing
@@ -80,7 +80,7 @@ This will output the `mpiMarkDup` executable (that is actually a singularity ima
 git clone https://github.com/bioinfo-pf-curie/mpiMarkDup.git
 cd mpiMarkDup
 # Checkout the branch of the version you want to package, for example:
-# git checkout version-1.0.0
+# git checkout version-1.0
 aclocal
 autoconf
 automake --add-missing
