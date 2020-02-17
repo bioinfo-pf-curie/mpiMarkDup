@@ -1,14 +1,32 @@
+/*
+   This file is part of mpiMarkDup
+   
+   Copyright Institut Curie 2020
+   
+   This software is a computer program whose purpose is to sort SAM file and mark duplicates.
+   
+   You can use, modify and/ or redistribute the software under the terms of license (see the LICENSE file for more details).
+   
+   The software is distributed in the hope that it will be useful, but "AS IS" WITHOUT ANY WARRANTY OF ANY KIND. Users are therefore encouraged to test the software's suitability as regards their requirements in conditions enabling the security of their systems and/or data. 
+   
+   The fact that you are presently reading this means that you have had knowledge of the license and that you accept its terms.
+*/
+
+/*
+   Module:
+     common.c
+     
+     define MPI type corresponding to
+
+   Authors:
+    Frederic Jarlier, 	Institut Curie
+	Firmin Martin,		Paris Descartes
+*/
+
 #ifndef COMMON_H
 #define COMMON_H
 #include <stdint.h>
 #include <limits.h>
-
-
-/**
- * @date 2018 Feb 26
- * @author Firmin Martin
- * @brief define MPI type corresponding to size_t
- */
 
 
 #if SIZE_MAX == UCHAR_MAX
