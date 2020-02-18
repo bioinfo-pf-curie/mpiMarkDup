@@ -44,7 +44,7 @@ such as [mpich](https://www.mpich.org/), [open-mpi](https://www.open-mpi.org/) o
 
 `mpiMarkDup` is executed with the `mpirun` program, for example:
 
-`mpirun -n cpu_number mpiMarkDup input_sam output_dir -q 0 -d 1000 -v 4`
+`mpirun -n 4 mpiMarkDup examples/data/HCC1187C_70K_READS.sam ${HOME}/mpiSORTExample -q 0 -d 1000 -v 4`
 
 The `-n` options passed to `mpirun` indicates the number of processes to run in parallel (this is basically the number of cores that will be used). For for details on how to choose the number processes, see the [Informatic resources](#informatic-resources) section.
 
