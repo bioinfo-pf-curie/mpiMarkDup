@@ -1,15 +1,28 @@
 #!/bin/bash
+
+#    This file is part of mpiMarkDup
+#    
+#    Copyright Institut Curie 2020
+#    
+#    This software is a computer program whose purpose is to sort SAM file and mark duplicates.
+#    
+#    You can use, modify and/ or redistribute the software under the terms of license (see the LICENSE file for more details).
+#    
+#    The software is distributed in the hope that it will be useful, but "AS IS" WITHOUT ANY WARRANTY OF ANY KIND. Users are therefore encouraged to test the software's suitability as regards their requirements in conditions enabling the security of their systems and/or data. 
+#    
+#    The fact that you are presently reading this means that you have had knowledge of the license and that you accept its terms.
+
 #: Title : compareMpiMDMarkDuplicates.sh
 #: Date : 13/03/2018
 #: Author : Julien LIN
 #: Version : 3
-#: Description : Compare the output of mpiMD and MarkDuplicates. It takes a directory containing directories of class of files test and use compare the files. The script can create a very simple log file which contain the output and the records that don’t match. It creates also a tempory directory in the directory where it is.
+#: Description : Compare the output of mpiMarkDup and MarkDuplicates. It takes a directory containing directories of class of files test and use compare the files. The script can create a very simple log file which contain the output and the records that don’t match. It creates also a tempory directory in the directory where it is.
 #: Options : -h for help
 #:           -s indicates which samtools
 #:           -p indicates which picard.jar
 #:           -j indicates which jvarkit.jar
 #:           -S indicates which compareSAMWithExternalTools.sh
-#:           -m indicates which mpiMD
+#:           -m indicates which mpiMarkDup
 #:           -l indicates that a log file is generated. You must indicate the name of the log file. Information are adding at the end of the file
 
 optstring=hs:p:j:S:m:l:
@@ -31,7 +44,7 @@ log=0
 while getopts $optstring opt
 do
     case $opt in
-	h) printf "%s\n" "Compare the output of mpiMD and MarkDuplicates. It takes a directory containing directories of " "class of files test and use compare the files. The script can " "create a very simple log file which contain the output and the records that don’t match." "-h for help" "-s indicates which samtools" "-p indicates which picard.jar" "-j indicates which jvarkit.jar" "-S indicates which compareSAMWithExternalTools.sh" "-m indicates which mpiMD" "-l indicates that a log file is generated"
+	h) printf "%s\n" "Compare the output of mpiMarkDup and MarkDuplicates. It takes a directory containing directories of " "class of files test and use compare the files. The script can " "create a very simple log file which contain the output and the records that don’t match." "-h for help" "-s indicates which samtools" "-p indicates which picard.jar" "-j indicates which jvarkit.jar" "-S indicates which compareSAMWithExternalTools.sh" "-m indicates which mpiMarkDup" "-l indicates that a log file is generated"
 	   exit ;;
 	s)
 	    if ! [ -z $OPTARG ]
@@ -100,7 +113,7 @@ do
 	   fi;;
 	   
 	*) echo $opt " is not a correct option"
-	   printf "%s\n" "Compare the output of mpiMD and MarkDuplicates. It takes a directory containing directories of " "class of files test and use compare the files. The script can " "create a very simple log file which contain the output and the records that don’t match." "-h for help" "-s indicates which samtools" "-p indicates which picard.jar" "-j indicates which jvarkit.jar" "-S indicates which compareSAMWithExternalTools.sh" "-m indicates which mpiMD" "-l indicates that a log file is generated"
+	   printf "%s\n" "Compare the output of mpiMarkDup and MarkDuplicates. It takes a directory containing directories of " "class of files test and use compare the files. The script can " "create a very simple log file which contain the output and the records that don’t match." "-h for help" "-s indicates which samtools" "-p indicates which picard.jar" "-j indicates which jvarkit.jar" "-S indicates which compareSAMWithExternalTools.sh" "-m indicates which mpiMarkDup" "-l indicates that a log file is generated"
 	   exit
     esac
 done
