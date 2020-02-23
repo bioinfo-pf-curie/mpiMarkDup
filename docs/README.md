@@ -44,7 +44,7 @@ such as [mpich](https://www.mpich.org/), [open-mpi](https://www.open-mpi.org/) o
 
 `mpiMarkDup` is executed with the `mpirun` program, for example:
 
-`mpirun -n 4 mpiMarkDup examples/data/HCC1187C_70K_READS.sam ${HOME}/mpiSORTExample -q 0 -d 1000 -v 4`
+`mpirun -n 4 mpiMarkDup examples/data/HCC1187C_70K_READS.sam ${HOME}/mpiMarkDupExample -q 0 -d 1000 -v 4`
 
 The `-n` options passed to `mpirun` indicates the number of processes to run in parallel (this is basically the number of cores that will be used). For for details on how to choose the number processes, see the [Informatic resources](#informatic-resources) section.
 
@@ -95,13 +95,15 @@ To uncompress:
 ### Memory
 
 Like for the sorting the total memory used during the marking is around one and a half the size of the SAM file.
-For example, to sort a 1.3TB SAM file (such as the [NA24631](ftp://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/data/ChineseTrio/HG005_NA24631_son/HG005_NA24631_son_HiSeq_300x/NHGRI_Illumina300X_Chinesetrio_novoalign_bams/) from [GIAB](https://github.com/genome-in-a-bottle/about_GIAB) which is a 300X Whole Genome (2x150-base) paired reads that we aligned with [mpiBWA](https://github.com/bioinfo-pf-curie/mpiBWA)), 1.7 TB of memory are required and splitted over 512 MPI workers (i.e. cores) that corresponds to makes 3.3 Gb of memory per core.
+For example, to sort a 1.3TB SAM file (such as the [NA24631](ftp://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/data/ChineseTrio/HG005_NA24631_son/HG005_NA24631_son_HiSeq_300x/NHGRI_Illumina300X_Chinesetrio_novoalign_bams/) from [GIAB](https://github.com/genome-in-a-bottle/about_GIAB) which is a 300X Whole Genome (2x150-base) paired reads that we aligned with [mpiBWA](https://github.com/bioinfo-pf-curie/mpiBWA)), 1.7 TB of memory are required and splitted over 512 MPI workers (i.e. cores) that corresponds to 3.3 Gb of memory per core.
 
-NA24631 sample is available here: ftp://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/data/ChineseTrio/HG005_NA24631_son/HG005_NA24631_son_HiSeq_300x/NHGRI_Illumina300X_Chinesetrio_novoalign_bams
+The NA24631 sample is available here:
+
+* ftp://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/data/ChineseTrio/HG005_NA24631_son/HG005_NA24631_son_HiSeq_300x/NHGRI_Illumina300X_Chinesetrio_novoalign_bams
 
 ### Cpu
 
-Due to the bitonic sorting, the algorithm is optimized for power of 2 number of CPU. Therefore, it is recommended to set the `-n` parameter of `mpirun` to 2, 4, 8, 16, 32, etc. in order to ensure for optimal performance. For example, `mpirun -n 4 mpiMarkDup examples/data/HCC1187C_70K_READS.sam -q 0 -d 0 -v 4 ${HOME}/mpiMarkDupExample`
+Due to the bitonic sorting, the algorithm is optimized for power of 2 number of CPU. Therefore, it is recommended to set the `-n` parameter of `mpirun` to 2, 4, 8, 16, 32, etc. in order to ensure optimal performance. For example, `mpirun -n 4 mpiMarkDup examples/data/HCC1187C_70K_READS.sam -q 0 -d 0 -v 4 ${HOME}/mpiMarkDupExample`
 
 
 However, the `-n` parameter can be set to any other value but extra  MPI communications will be added to fit power of 2 required by the bitonic algorithm. In this case, additonal memory is needed for the rank 0 worker. This rank is responsible for collecting and dispatching the data before and after bitonic.
@@ -173,7 +175,7 @@ We don't recommend to use MPI with [NFS](https://en.wikipedia.org/wiki/Network_F
 
 Firstly, the program sorts the reads by genome position and extract discordant and unmapped (end and mate) reads with the same method described in [mpiSORT](https://github.com/bioinfo-pf-curie/mpiSORT).
 
-Secondly, the program marks the duplicated reads for each chromosome and discordant reads according to Picard Markduplicate method. The unmapped and unmapped mates are not marked. To limit memory overhead, we build a distributed perfect hash table (see [perfectHash.c](../src/perfectHash.c) for details) for fragment list and end list. This way the memory usage is under the memory usage of [mpiSORT](https://github.com/bioinfo-pf-curie/mpiSORT).
+Secondly, the program marks the duplicated reads for each chromosome and discordant reads according to Picard Markduplicate method. The discordant and unmapped reds are not marked. To limit memory overhead, we build a distributed perfect hash table (see [perfectHash.c](../src/perfectHash.c) for details) for fragment list and end list. This way the memory usage is under the memory usage of [mpiSORT](https://github.com/bioinfo-pf-curie/mpiSORT).
 
 Finally, each chromosome is marked and compressed with bgzf and written down in the output folder.
 
