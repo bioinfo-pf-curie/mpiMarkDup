@@ -2,8 +2,7 @@ version-1.0
 
 Release form 12/03/2024
 
-
- lot of bugs
+lot of bugs have been fixed in this release
 
 
 - mpiMarkDup: sorts SAM files and mark duplicates
