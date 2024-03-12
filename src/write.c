@@ -710,6 +710,8 @@ void writeSam(
     int rank,
     char *output_dir,
     char *header,
+    CHTbl *htblref,
+    CHTbl *htblrg,
     size_t local_readNum,
     char *chrName,
     int total_num_proc,  //this is the number of proc in split communication
@@ -727,9 +729,7 @@ void writeSam(
     char *data,
     size_t start_offset_in_file,
     size_t previous_local_readNum,
-    size_t final_local_readNum,
-    size_t *disc_dup_offset_source,
-    size_t *disc_dup_number
+    skip_list *list
 ) {
 
 
@@ -1290,9 +1290,6 @@ void writeSam(
     free(blocklens);
     free(indices);
     free(oldtypes);
-
-    malloc_trim(0);
-
     //if (rank == master_job_phase_2) {
     //    fprintf(stderr, "Rank %d :::::[WRITE][DATA PACK] Time =  %f seconds\n", rank, MPI_Wtime() - time_count);
     //}
@@ -1388,9 +1385,11 @@ void writeSam(
     //md_log_rank_debug(master_job_phase_1, "[WRITE][BRUCK] sum_num_of_reads   = %zu s \n", sum_num_of_reads);
     //md_log_rank_debug(master_job_phase_1, "[WRITE][BRUCK] previous_local_readNum   = %zu s \n", previous_local_readNum);
     //md_log_rank_debug(master_job_phase_1, "[WRITE][BRUCK] final_local_readNum   = %zu s \n", final_local_readNum);
-    assert(final_local_readNum == sum_num_of_reads);
+    //assert(final_local_readNum == sum_num_of_reads);
 
-    previous_local_readNum = final_local_readNum;
+    //previous_local_readNum = final_local_readNum;
+
+    previous_local_readNum = sum_num_of_reads;
 
     size_t *new_offset_dest_index_phase3            = malloc(sizeof(size_t) * previous_local_readNum);
     char  **data_reads_to_sort                      = malloc(previous_local_readNum * sizeof(char *));
@@ -1425,7 +1424,7 @@ void writeSam(
         j += number_of_reads_by_procs[m2];
     }
 
-    assert(j == final_local_readNum);
+    //assert(j == final_local_readNum);
 
     /*
      *
@@ -1461,35 +1460,43 @@ void writeSam(
     //task SORT OFFSET DESTINATION
     //now we sort new_offset_dest_phase2
 
-
-    base_arr2 = data_offsets_to_sort;
-    qksort(new_offset_dest_index_phase3, previous_local_readNum, 0, previous_local_readNum - 1, compare_size_t);
-
-    size_t *offsets_sorted = malloc(sizeof(size_t) * previous_local_readNum);
+    size_t *offsets_sorted = NULL;
     size_t size_t_buffer_uncompressed = 0;
 
-    for (k = 0; k < previous_local_readNum; k++) {
-        offsets_sorted[k] = data_offsets_to_sort[new_offset_dest_index_phase3[k]];
-        size_t_buffer_uncompressed += data_size_to_sort[new_offset_dest_index_phase3[k]];
-        sam_reads_offsets_source_sorted[k] = sam_reads_offsets_source[new_offset_dest_index_phase3[k]];
-    }
+    char *char_buff_uncompressed = NULL; 
+    
+	if (previous_local_readNum > 0){
+    	
 
-    free(data_offsets_to_sort);
-    free(sam_reads_offsets_source);
+		base_arr2 = data_offsets_to_sort;
+    		qksort(new_offset_dest_index_phase3, previous_local_readNum, 0, previous_local_readNum - 1, compare_size_t);
+		
+		offsets_sorted = malloc(sizeof(size_t) * previous_local_readNum);
 
-    char *char_buff_uncompressed = malloc(size_t_buffer_uncompressed * sizeof(char) + 1);
-    char_buff_uncompressed[size_t_buffer_uncompressed] = 0;
-    char *p1 = char_buff_uncompressed;
-    size_t q1 = 0;
 
-    for (k = 0; k < previous_local_readNum; k++) {
-        while ( q1 < data_size_to_sort[new_offset_dest_index_phase3[k]]) {
-            *p1++ = *data_reads_to_sort[new_offset_dest_index_phase3[k]]++;
-            q1++;
-        }
+		for (k = 0; k < previous_local_readNum; k++) {
+        		offsets_sorted[k] = data_offsets_to_sort[new_offset_dest_index_phase3[k]];
+        		size_t_buffer_uncompressed += data_size_to_sort[new_offset_dest_index_phase3[k]];
+        		sam_reads_offsets_source_sorted[k] = sam_reads_offsets_source[new_offset_dest_index_phase3[k]];
+    		}
 
-        q1 = 0;
-    }
+    		free(data_offsets_to_sort);
+    		free(sam_reads_offsets_source);
+
+    		char_buff_uncompressed = malloc(size_t_buffer_uncompressed * sizeof(char) + 1);
+    		char_buff_uncompressed[size_t_buffer_uncompressed] = 0;
+    		char *p1 = char_buff_uncompressed;
+    		size_t q1 = 0;
+
+    		for (k = 0; k < previous_local_readNum; k++) {
+        		while ( q1 < data_size_to_sort[new_offset_dest_index_phase3[k]]) {
+            			*p1++ = *data_reads_to_sort[new_offset_dest_index_phase3[k]]++;
+            			q1++;
+        		}
+
+        	q1 = 0;
+    		}
+	}
 
     free(new_offset_dest_index_phase3);
     free(data_reads_to_sort);
@@ -1500,301 +1507,318 @@ void writeSam(
     char_buff_uncompressed_with_duplicates = markDuplicate (char_buff_uncompressed, 
                                                             previous_local_readNum, 
                                                             header, 
+							    htblref,
+							    htblrg,
                                                             split_comm,
                                                             sam_reads_offsets_source_sorted, 
-                                                            disc_dup_offset_source,
-                                                            disc_dup_number);
+							    list);
     
 
-
+    
     MPI_Barrier(split_comm);
+    
     /** COMPRESSION PART * */
 
-    time_count = MPI_Wtime();
+    MPI_Comm newcomm;
+    int color = (previous_local_readNum > 0 );
+    MPI_Comm_split(split_comm, color, 0, &newcomm);
 
-    BGZF *fp;
-    fp = calloc(1, sizeof(BGZF));
-    int block_length = MAX_BLOCK_SIZE;
-    int bytes_written;
-    int length = strlen(char_buff_uncompressed_with_duplicates);
+    if (previous_local_readNum){
 
-    fp->open_mode = 'w';
-    fp->uncompressed_block_size = MAX_BLOCK_SIZE;
-    fp->uncompressed_block = malloc(MAX_BLOCK_SIZE);
-    fp->compressed_block_size = MAX_BLOCK_SIZE;
-    fp->compressed_block = malloc(MAX_BLOCK_SIZE);
-    fp->cache_size = 0;
-    fp->cache = kh_init(cache);
-    fp->block_address = 0;
-    fp->block_offset = 0;
-    fp->block_length = 0;
-    fp->compress_level = compression_level < 0 ? Z_DEFAULT_COMPRESSION : compression_level; // Z_DEFAULT_COMPRESSION==-1
+	/*
+       char_buff_uncompressed_with_duplicates = markDuplicate (char_buff_uncompressed,
+                                                            previous_local_readNum,
+                                                            header,
+                                                            newcomm,
+                                                            sam_reads_offsets_source_sorted,
+                                                            disc_dup_offset_source,
+                                                            disc_dup_number);
 
-    if (fp->compress_level > 9) {
-        fp->compress_level = Z_DEFAULT_COMPRESSION;
+       */
+
+    	time_count = MPI_Wtime();
+
+    	BGZF *fp;
+    	fp = calloc(1, sizeof(BGZF));
+    	int block_length = MAX_BLOCK_SIZE;
+    	int bytes_written;
+    	int length = strlen(char_buff_uncompressed_with_duplicates);
+
+    	fp->open_mode = 'w';
+    	fp->uncompressed_block_size = MAX_BLOCK_SIZE;
+    	fp->uncompressed_block = malloc(MAX_BLOCK_SIZE);
+    	fp->compressed_block_size = MAX_BLOCK_SIZE;
+    	fp->compressed_block = malloc(MAX_BLOCK_SIZE);
+    	fp->cache_size = 0;
+    	fp->cache = kh_init(cache);
+    	fp->block_address = 0;
+    	fp->block_offset = 0;
+    	fp->block_length = 0;
+    	fp->compress_level = compression_level < 0 ? Z_DEFAULT_COMPRESSION : compression_level; // Z_DEFAULT_COMPRESSION==-1
+
+    	if (fp->compress_level > 9) {
+        	fp->compress_level = Z_DEFAULT_COMPRESSION;
+    	}
+
+    	const bgzf_byte_t *input = (void *)char_buff_uncompressed_with_duplicates;
+    	int compressed_size = 0;
+
+    	if (fp->uncompressed_block == NULL) {
+    	    fp->uncompressed_block = malloc(fp->uncompressed_block_size);
+    	}
+
+    	input = (void *)char_buff_uncompressed_with_duplicates;
+    	block_length = fp->uncompressed_block_size;
+    	bytes_written = 0;
+    	uint8_t *compressed_buff =  malloc(strlen(char_buff_uncompressed_with_duplicates) * sizeof(uint8_t));
+
+    	//if (rank == master_job_phase_2) {
+    	//    fprintf(stderr, "rank %d :::: start loop compression \n", rank);
+    	//}
+    	md_log_rank_debug(master_job_phase_2, "start loop compression \n");
+
+
+    	while (bytes_written < length) {
+        	int copy_length = bgzf_min(block_length - fp->block_offset, length - bytes_written);
+        	bgzf_byte_t *buffer = fp->uncompressed_block;
+        	memcpy(buffer + fp->block_offset, input, copy_length);
+        	fp->block_offset += copy_length;
+        	input += copy_length;
+        	bytes_written += copy_length;
+
+        	//if (fp->block_offset == block_length) {
+        	//we copy in a temp buffer
+        	while (fp->block_offset > 0) {
+            		int block_length;
+            		block_length = deflate_block(fp, fp->block_offset);
+
+            		//is it necessary?
+            		//if (block_length < 0) break;
+
+            		// count = fwrite(fp->compressed_block, 1, block_length, fp->file);
+            		// we replace the fwrite with a memcopy
+            		memcpy(compressed_buff + compressed_size, fp->compressed_block, block_length);
+            		compressed_size += block_length;
+            		fp->block_address += block_length;
+        	}
+
+        	//}
+    	}
+
+    	BGZF *fp_header;
+    	fp_header = calloc(1, sizeof(BGZF));
+    	uint8_t *compressed_header = NULL;
+    	int compressed_size_header = 0;
+
+    	if (rank == 0) {
+
+        	int block_length = MAX_BLOCK_SIZE;
+        	int bytes_written;
+        	int length = strlen(header);
+
+        	fp_header->open_mode = 'w';
+        	fp_header->uncompressed_block_size = MAX_BLOCK_SIZE;
+        	fp_header->uncompressed_block = malloc(MAX_BLOCK_SIZE);
+        	fp_header->compressed_block_size = MAX_BLOCK_SIZE;
+        	fp_header->compressed_block = malloc(MAX_BLOCK_SIZE);
+        	fp_header->cache_size = 0;
+        	fp_header->block_address = 0;
+        	fp_header->block_offset = 0;
+        	fp_header->block_length = 0;
+        	fp_header->compress_level = compression_level < 0 ? Z_DEFAULT_COMPRESSION : compression_level; // Z_DEFAULT_COMPRESSION==-1
+
+        	if (fp_header->compress_level > 9) {
+            		fp_header->compress_level = Z_DEFAULT_COMPRESSION;
+        	}
+
+
+        	const bgzf_byte_t *input = (void *)header;
+
+	
+        	if (fp_header->uncompressed_block == NULL) {
+            		fp_header->uncompressed_block = malloc(fp_header->uncompressed_block_size);
+        	}
+
+        	input = (void *)header;
+        	block_length = fp_header->uncompressed_block_size;
+        	bytes_written = 0;
+        	compressed_header =  malloc(strlen(char_buff_uncompressed_with_duplicates) * sizeof(uint8_t));
+
+        	while (bytes_written < length) {
+            		int copy_length = bgzf_min(block_length - fp_header->block_offset, length - bytes_written);
+            		bgzf_byte_t *buffer = fp_header->uncompressed_block;
+            		memcpy(buffer + fp_header->block_offset, input, copy_length);
+            		fp_header->block_offset += copy_length;
+            		input += copy_length;
+            		bytes_written += copy_length;
+
+            		//if (fp->block_offset == block_length) {
+            		//we copy in a temp buffer
+            		while (fp_header->block_offset > 0) {
+                	int block_length;
+                	block_length = deflate_block(fp_header, fp_header->block_offset);
+
+                	//is it necessary?
+                	//if (block_length < 0) break;
+
+                	// count = fwrite(fp->compressed_block, 1, block_length, fp->file);
+                	// we replace the fwrite with a memcopy
+                	memcpy(compressed_header + compressed_size_header, fp_header->compressed_block, block_length);
+                	compressed_size_header += block_length;
+                	fp_header->block_address += block_length;
+            		}
+
+            	//}
+        	}
+    	}
+
+    	kh_destroy(cache, fp->cache);
+    	free(char_buff_uncompressed_with_duplicates);
+    	size_t compSize = compressed_size;
+
+    	//if (rank == master_job_phase_2) {
+    	//    fprintf(stderr, "Rank %d :::::[WRITE][COMPRESSION] Time for compressing %f seconds \n", rank, MPI_Wtime() - time_count);
+    	//}
+
+    	md_log_rank_debug(master_job_phase_2, "[WRITE][COMPRESSION] Time for compressing %f seconds \n", rank, MPI_Wtime() - time_count);
+
+
+    	/*
+    	 * We write results of compression
+    	 */
+
+    	size_t write_offset = 0;
+
+    	MPI_Offset *y  = (MPI_Offset *) calloc(num_proc, sizeof(MPI_Offset));
+    	MPI_Offset *y2 = (MPI_Offset *) calloc(num_proc + 1, sizeof(MPI_Offset));
+
+    	MPI_Gather(&compSize, 1, MPI_LONG_LONG_INT, y, 1, MPI_LONG_LONG_INT, 0, newcomm);
+
+    	//now we make a cumulative sum
+    	int i1 = 0;
+
+    	if (rank == 0) {
+        	for (i1 = 1; i1 < (num_proc + 1); i1++) {
+            		y2[i1] = y[i1 - 1];
+        	}
+
+        	for (i1 = 1; i1 < (num_proc + 1); i1++) {
+            		y2[i1] = y2[i1 - 1] + y2[i1];
+        	}
+
+        	for (i1 = 0; i1 < (num_proc + 1); i1++) {
+            		y2[i1] = y2[i1] + write_offset + compressed_size_header;
+       	 	}
+
+    	}
+
+    	MPI_Scatter(y2, 1, MPI_LONG_LONG_INT, &write_offset, 1, MPI_LONG_LONG_INT, 0, newcomm);
+    	// we create the path where to write for collective write
+    	path = (char *)malloc((strlen(output_dir) + strlen(chrName) + 40) * sizeof(char));
+    	sprintf(path, "%s/%s.gz", output_dir, chrName);
+
+
+    	//task FINE TUNING FINFO FOR WRITING OPERATIONS
+
+    	MPI_Info_set(finfo, "striping_factor", "12");
+    	//MPI_Info_set(finfo,"striping_unit","1610612736"); //1G striping
+    	MPI_Info_set(finfo, "striping_unit", "268435456"); //256 Mo
+
+    	MPI_Info_set(finfo, "nb_proc", "12");
+    	MPI_Info_set(finfo, "cb_nodes", "12");
+    	MPI_Info_set(finfo, "cb_block_size", "4194304"); /* 4194304 = 4 MBytes - should match FS block size */
+    	//MPI_Info_set(finfo,"cb_buffer_size","1610612736"); /* 128 MBytes (Optional) */
+
+
+    	ierr = MPI_File_open(newcomm, path, MPI_MODE_WRONLY  + MPI_MODE_CREATE, finfo, &out);
+
+    	if (ierr) {
+        	fprintf(stderr, "Rank %d failed to open %s.\nAborting.\n\n", rank, path);
+        	MPI_Abort(newcomm, ierr);
+        	exit(2);
+
+    	} else {
+        	//if (!rank) {
+        	//    fprintf(stderr, "Rank %d :::::[WRITE] %s.bam successfully opened\n", rank, chrName);
+        	//}
+        	md_log_debug("[WRITE] %s.bam successfully opened\n", chrName);
+    	}
+
+    	time_count = MPI_Wtime();
+
+    	if (rank == master_job_phase_2 ) {
+        	//fprintf(stderr, "Proc rank %d ::: we write the header \n", rank);
+        	md_log_rank_debug(master_job_phase_2, "we write the header\n");
+        	MPI_File_write(out, compressed_header, compressed_size_header, MPI_BYTE, MPI_STATUS_IGNORE);
+    	}
+
+    	free(compressed_header);
+
+    	MPI_File_set_view(out, write_offset, MPI_BYTE, MPI_BYTE, "native", finfo);
+    	MPI_File_write_all(out, compressed_buff, (size_t)compSize, MPI_BYTE, &status);
+
+    	//task FINE TUNING FINFO BACK TO READING OPERATIONS
+    	//MPI_Info_set(finfo,"striping_factor","12");
+    	//MPI_Info_set(finfo,"striping_unit","2684354560"); //1G striping
+
+    	//MPI_Info_set(finfo,"nb_proc","128");
+    	//MPI_Info_set(finfo,"cb_nodes","128");
+    	//MPI_Info_set(finfo,"cb_block_size","2684354560"); /* 4194304 MBytes - should match FS block size */
+    	//MPI_Info_set(finfo,"cb_buffer_size","2684354560"); /* 128 MBytes (Optional) */
+
+    	//free(buff_compressed);
+
+    	//now we write the magic number end
+    	
+    	if (rank == master_job_phase_2 ) {
+        	static uint8_t magic[28] = "\037\213\010\4\0\0\0\0\0\377\6\0\102\103\2\0\033\0\3\0\0\0\0\0\0\0\0\0";
+        	//md_log_rank_debug(master_job_phase_2, "[WRITE] we write EOF \n");
+        	MPI_File_seek(out, 0, MPI_SEEK_END);
+        	MPI_File_write(out, magic, 28, MPI_BYTE, MPI_STATUS_IGNORE);
+    	}
+    	
+	//MPI_Barrier(newcomm);
+    	free(compressed_buff);
+
+    	//if (rank == master_job_phase_2) {
+    	//    fprintf(stderr, "Rank %d :::::[WRITE][WRITING BGZF] Time for chromosome %s writing %f seconds\n", rank, chrName, MPI_Wtime() - time_count);
+    	//}
+
+    	md_log_rank_debug(master_job_phase_2, "[WRITE][WRITING BGZF] Time for chromosome %s writing %f seconds\n", chrName, MPI_Wtime() - time_count);
+
+    	free(fp->uncompressed_block);
+    	free(fp->compressed_block);
+    	free_cache(fp);
+    	free(fp);
+
+    	if (rank == 0) {
+        	free(fp_header->uncompressed_block);
+        	free(fp_header->compressed_block);
+        	free_cache(fp_header);
+    	}
+
+    	free(fp_header);
+
+
+    	MPI_File_close(&out);
+    	free(path);
+
+    	for (m2 = 0; m2 < num_proc; m2++) {
+        	if (data2[m2]) {
+            		free(data2[m2]);
+        	}
+    	}
+
+    	if (data2) {
+        	free(data2);
+    	}
+
+    	free(offsets_sorted);
+    	free(data_size_to_sort);
+    	free(y);
+    	free(y2);
     }
-
-    const bgzf_byte_t *input = (void *)char_buff_uncompressed_with_duplicates;
-    int compressed_size = 0;
-
-    if (fp->uncompressed_block == NULL) {
-        fp->uncompressed_block = malloc(fp->uncompressed_block_size);
-    }
-
-    input = (void *)char_buff_uncompressed_with_duplicates;
-    block_length = fp->uncompressed_block_size;
-    bytes_written = 0;
-    uint8_t *compressed_buff =  malloc(strlen(char_buff_uncompressed_with_duplicates) * sizeof(uint8_t));
-
-    //if (rank == master_job_phase_2) {
-    //    fprintf(stderr, "rank %d :::: start loop compression \n", rank);
-    //}
-    md_log_rank_debug(master_job_phase_2, "start loop compression \n");
-
-
-    while (bytes_written < length) {
-        int copy_length = bgzf_min(block_length - fp->block_offset, length - bytes_written);
-        bgzf_byte_t *buffer = fp->uncompressed_block;
-        memcpy(buffer + fp->block_offset, input, copy_length);
-        fp->block_offset += copy_length;
-        input += copy_length;
-        bytes_written += copy_length;
-
-        //if (fp->block_offset == block_length) {
-        //we copy in a temp buffer
-        while (fp->block_offset > 0) {
-            int block_length;
-            block_length = deflate_block(fp, fp->block_offset);
-
-            //is it necessary?
-            //if (block_length < 0) break;
-
-            // count = fwrite(fp->compressed_block, 1, block_length, fp->file);
-            // we replace the fwrite with a memcopy
-            memcpy(compressed_buff + compressed_size, fp->compressed_block, block_length);
-            compressed_size += block_length;
-            fp->block_address += block_length;
-        }
-
-        //}
-    }
-
-    BGZF *fp_header;
-    fp_header = calloc(1, sizeof(BGZF));
-    uint8_t *compressed_header = NULL;
-    int compressed_size_header = 0;
-
-    if (rank == 0) {
-
-        int block_length = MAX_BLOCK_SIZE;
-        int bytes_written;
-        int length = strlen(header);
-
-        fp_header->open_mode = 'w';
-        fp_header->uncompressed_block_size = MAX_BLOCK_SIZE;
-        fp_header->uncompressed_block = malloc(MAX_BLOCK_SIZE);
-        fp_header->compressed_block_size = MAX_BLOCK_SIZE;
-        fp_header->compressed_block = malloc(MAX_BLOCK_SIZE);
-        fp_header->cache_size = 0;
-        fp_header->block_address = 0;
-        fp_header->block_offset = 0;
-        fp_header->block_length = 0;
-        fp_header->compress_level = compression_level < 0 ? Z_DEFAULT_COMPRESSION : compression_level; // Z_DEFAULT_COMPRESSION==-1
-
-        if (fp_header->compress_level > 9) {
-            fp_header->compress_level = Z_DEFAULT_COMPRESSION;
-        }
-
-
-        const bgzf_byte_t *input = (void *)header;
-
-
-        if (fp_header->uncompressed_block == NULL) {
-            fp_header->uncompressed_block = malloc(fp_header->uncompressed_block_size);
-        }
-
-        input = (void *)header;
-        block_length = fp_header->uncompressed_block_size;
-        bytes_written = 0;
-        compressed_header =  malloc(strlen(char_buff_uncompressed_with_duplicates) * sizeof(uint8_t));
-
-        while (bytes_written < length) {
-            int copy_length = bgzf_min(block_length - fp_header->block_offset, length - bytes_written);
-            bgzf_byte_t *buffer = fp_header->uncompressed_block;
-            memcpy(buffer + fp_header->block_offset, input, copy_length);
-            fp_header->block_offset += copy_length;
-            input += copy_length;
-            bytes_written += copy_length;
-
-            //if (fp->block_offset == block_length) {
-            //we copy in a temp buffer
-            while (fp_header->block_offset > 0) {
-                int block_length;
-                block_length = deflate_block(fp_header, fp_header->block_offset);
-
-                //is it necessary?
-                //if (block_length < 0) break;
-
-                // count = fwrite(fp->compressed_block, 1, block_length, fp->file);
-                // we replace the fwrite with a memcopy
-                memcpy(compressed_header + compressed_size_header, fp_header->compressed_block, block_length);
-                compressed_size_header += block_length;
-                fp_header->block_address += block_length;
-            }
-
-            //}
-        }
-    }
-
-    kh_destroy(cache, fp->cache);
-    free(char_buff_uncompressed_with_duplicates);
-    size_t compSize = compressed_size;
-
-    //if (rank == master_job_phase_2) {
-    //    fprintf(stderr, "Rank %d :::::[WRITE][COMPRESSION] Time for compressing %f seconds \n", rank, MPI_Wtime() - time_count);
-    //}
-
-    md_log_rank_debug(master_job_phase_2, "[WRITE][COMPRESSION] Time for compressing %f seconds \n", rank, MPI_Wtime() - time_count);
-
-
-    /*
-     * We write results of compression
-     */
-
-    size_t write_offset = 0;
-
-    MPI_Offset *y  = (MPI_Offset *) calloc(num_proc, sizeof(MPI_Offset));
-    MPI_Offset *y2 = (MPI_Offset *) calloc(num_proc + 1, sizeof(MPI_Offset));
-
-    MPI_Gather(&compSize, 1, MPI_LONG_LONG_INT, y, 1, MPI_LONG_LONG_INT, 0, split_comm);
-
-    //now we make a cumulative sum
-    int i1 = 0;
-
-    if (rank == 0) {
-        for (i1 = 1; i1 < (num_proc + 1); i1++) {
-            y2[i1] = y[i1 - 1];
-        }
-
-        for (i1 = 1; i1 < (num_proc + 1); i1++) {
-            y2[i1] = y2[i1 - 1] + y2[i1];
-        }
-
-        for (i1 = 0; i1 < (num_proc + 1); i1++) {
-            y2[i1] = y2[i1] + write_offset + compressed_size_header;
-        }
-
-    }
-
-    MPI_Scatter(y2, 1, MPI_LONG_LONG_INT, &write_offset, 1, MPI_LONG_LONG_INT, 0, split_comm);
-    // we create the path where to write for collective write
-    path = (char *)malloc((strlen(output_dir) + strlen(chrName) + 40) * sizeof(char));
-    sprintf(path, "%s/%s.gz", output_dir, chrName);
-
-
-    //task FINE TUNING FINFO FOR WRITING OPERATIONS
-
-    MPI_Info_set(finfo, "striping_factor", "12");
-    //MPI_Info_set(finfo,"striping_unit","1610612736"); //1G striping
-    MPI_Info_set(finfo, "striping_unit", "268435456"); //256 Mo
-
-    MPI_Info_set(finfo, "nb_proc", "12");
-    MPI_Info_set(finfo, "cb_nodes", "12");
-    MPI_Info_set(finfo, "cb_block_size", "4194304"); /* 4194304 = 4 MBytes - should match FS block size */
-    //MPI_Info_set(finfo,"cb_buffer_size","1610612736"); /* 128 MBytes (Optional) */
-
-
-    ierr = MPI_File_open(split_comm, path, MPI_MODE_WRONLY  + MPI_MODE_CREATE, finfo, &out);
-
-    if (ierr) {
-        fprintf(stderr, "Rank %d failed to open %s.\nAborting.\n\n", rank, path);
-        MPI_Abort(split_comm, ierr);
-        exit(2);
-
-    } else {
-        //if (!rank) {
-        //    fprintf(stderr, "Rank %d :::::[WRITE] %s.bam successfully opened\n", rank, chrName);
-        //}
-        md_log_debug("[WRITE] %s.bam successfully opened\n", chrName);
-    }
-
-    time_count = MPI_Wtime();
-
-    if (rank == master_job_phase_2 ) {
-        //fprintf(stderr, "Proc rank %d ::: we write the header \n", rank);
-        md_log_rank_debug(master_job_phase_2, "we write the header\n");
-        MPI_File_write(out, compressed_header, compressed_size_header, MPI_BYTE, MPI_STATUS_IGNORE);
-    }
-
-    free(compressed_header);
-
-    MPI_File_set_view(out, write_offset, MPI_BYTE, MPI_BYTE, "native", finfo);
-    MPI_File_write_all(out, compressed_buff, (size_t)compSize, MPI_BYTE, &status);
-
-    //task FINE TUNING FINFO BACK TO READING OPERATIONS
-    //MPI_Info_set(finfo,"striping_factor","12");
-    //MPI_Info_set(finfo,"striping_unit","2684354560"); //1G striping
-
-    //MPI_Info_set(finfo,"nb_proc","128");
-    //MPI_Info_set(finfo,"cb_nodes","128");
-    //MPI_Info_set(finfo,"cb_block_size","2684354560"); /* 4194304 MBytes - should match FS block size */
-    //MPI_Info_set(finfo,"cb_buffer_size","2684354560"); /* 128 MBytes (Optional) */
-
-    //free(buff_compressed);
-
-    //now we write the magic number end
-    /*
-    if (rank == master_job_phase_2 ) {
-        static uint8_t magic[28] = "\037\213\010\4\0\0\0\0\0\377\6\0\102\103\2\0\033\0\3\0\0\0\0\0\0\0\0\0";
-        md_log_rank_debug(master_job_phase_2, "[WRITE] we write EOF \n");
-        MPI_File_seek(out, 0, MPI_SEEK_END);
-        MPI_File_write(out, magic, 28, MPI_BYTE, MPI_STATUS_IGNORE);
-    }
-    */
-    MPI_Barrier(split_comm);
-
-
-
-    free(compressed_buff);
-
-    //if (rank == master_job_phase_2) {
-    //    fprintf(stderr, "Rank %d :::::[WRITE][WRITING BGZF] Time for chromosome %s writing %f seconds\n", rank, chrName, MPI_Wtime() - time_count);
-    //}
-
-    md_log_rank_debug(master_job_phase_2, "[WRITE][WRITING BGZF] Time for chromosome %s writing %f seconds\n", chrName, MPI_Wtime() - time_count);
-
-    free(fp->uncompressed_block);
-    free(fp->compressed_block);
-    free_cache(fp);
-    free(fp);
-
-    if (rank == 0) {
-        free(fp_header->uncompressed_block);
-        free(fp_header->compressed_block);
-        free_cache(fp_header);
-    }
-
-    free(fp_header);
-
-
-    MPI_File_close(&out);
-    free(path);
-
-    for (m2 = 0; m2 < num_proc; m2++) {
-        if (data2[m2]) {
-            free(data2[m2]);
-        }
-    }
-
-    if (data2) {
-        free(data2);
-    }
-
-    free(offsets_sorted);
-    free(data_size_to_sort);
-    free(y);
-    free(y2);
-    malloc_trim(0);
+    MPI_Comm_free(&newcomm);
    
 }
 
@@ -1819,7 +1843,6 @@ size_t * writeSam_discordant(
     char *data,
     size_t start_offset_in_file,
     size_t previous_local_readNum,
-    size_t final_local_readNum,
     size_t *disc_dup_number
 ) {
 
@@ -2457,7 +2480,6 @@ size_t * writeSam_discordant(
     free(new_local_reads_dest_rank_sorted_bruck2);
     free(new_local_offset_source_sorted_bruck2);
    
-    malloc_trim(0);
 
     size_t sum_num_of_reads = 0;
 
@@ -2467,9 +2489,11 @@ size_t * writeSam_discordant(
     //md_log_rank_debug(master_job_phase_1, "[WRITE][BRUCK] sum_num_of_reads   = %zu s \n", sum_num_of_reads);
     //md_log_rank_debug(master_job_phase_1, "[WRITE][BRUCK] previous_local_readNum   = %zu s \n", previous_local_readNum);
     //md_log_rank_debug(master_job_phase_1, "[WRITE][BRUCK] final_local_readNum   = %zu s \n", final_local_readNum);
-    assert(final_local_readNum == sum_num_of_reads);
+    //assert(final_local_readNum == sum_num_of_reads);
 
-    previous_local_readNum = final_local_readNum;
+    //previous_local_readNum = final_local_readNum;
+  
+    previous_local_readNum = sum_num_of_reads;
 
     size_t *new_offset_dest_index_phase3     = malloc(previous_local_readNum * sizeof(size_t));
     char  **data_reads_to_sort               = malloc(previous_local_readNum * sizeof(char *));
@@ -2503,7 +2527,7 @@ size_t * writeSam_discordant(
         j += number_of_reads_by_procs[m2];
     }
 
-    assert(j == final_local_readNum);
+    //assert(j == final_local_readNum);
 
     /*
      *
@@ -2540,36 +2564,41 @@ size_t * writeSam_discordant(
     //task SORT OFFSET DESTINATION
     //now we sort new_offset_dest_phase2
 
+	char *char_buff_uncompressed = NULL;
+	size_t *offsets_sorted = NULL;
+	size_t *buff_reads_offsets_source_sorted = NULL;
+   	if (previous_local_readNum > 0) {
 
-    base_arr2 = data_offsets_to_sort;
-    qksort(new_offset_dest_index_phase3, previous_local_readNum, 0, previous_local_readNum - 1, compare_size_t);
 
-    size_t *offsets_sorted = malloc(sizeof(size_t) * previous_local_readNum);
-    size_t *buff_reads_offsets_source_sorted = malloc(sizeof(size_t) * previous_local_readNum);
-    size_t size_t_buffer_uncompressed = 0;
+    		base_arr2 = data_offsets_to_sort;
+    		qksort(new_offset_dest_index_phase3, previous_local_readNum, 0, previous_local_readNum - 1, compare_size_t);
+
+    		offsets_sorted = malloc(sizeof(size_t) * previous_local_readNum);
+    		buff_reads_offsets_source_sorted = malloc(sizeof(size_t) * previous_local_readNum);
+    		size_t size_t_buffer_uncompressed = 0;
     
-    for (k = 0; k < previous_local_readNum; k++) {
-        offsets_sorted[k] = data_offsets_to_sort[new_offset_dest_index_phase3[k]];
-        buff_reads_offsets_source_sorted[k] = buff_reads_offsets_source[new_offset_dest_index_phase3[k]];
-        size_t_buffer_uncompressed += data_size_to_sort[new_offset_dest_index_phase3[k]];
-    }
+    		for (k = 0; k < previous_local_readNum; k++) {
+        		offsets_sorted[k] = data_offsets_to_sort[new_offset_dest_index_phase3[k]];
+        		buff_reads_offsets_source_sorted[k] = buff_reads_offsets_source[new_offset_dest_index_phase3[k]];
+        		size_t_buffer_uncompressed += data_size_to_sort[new_offset_dest_index_phase3[k]];
+    		}
 
-    free(buff_reads_offsets_source);
-    free(data_offsets_to_sort);
-    char *char_buff_uncompressed = malloc(size_t_buffer_uncompressed * sizeof(char) + 1);
-    char_buff_uncompressed[size_t_buffer_uncompressed] = 0;
-    char *p1 = char_buff_uncompressed;
-    size_t q1 = 0;
+    		free(buff_reads_offsets_source);
+    		free(data_offsets_to_sort);
+    		char_buff_uncompressed = malloc(size_t_buffer_uncompressed * sizeof(char) + 1);
+    		char_buff_uncompressed[size_t_buffer_uncompressed] = 0;
+    		char *p1 = char_buff_uncompressed;
+    		size_t q1 = 0;
 
-    for (k = 0; k < previous_local_readNum; k++) {
-        while ( q1 < data_size_to_sort[new_offset_dest_index_phase3[k]]) {
-            *p1++ = *data_reads_to_sort[new_offset_dest_index_phase3[k]]++;
-            q1++;
-        }
+    		for (k = 0; k < previous_local_readNum; k++) {
+        		while ( q1 < data_size_to_sort[new_offset_dest_index_phase3[k]]) {
+            			*p1++ = *data_reads_to_sort[new_offset_dest_index_phase3[k]]++;
+            			q1++;
+        		}
 
-        q1 = 0;
-    }
-
+        		q1 = 0;
+    		}
+    	}
     free(new_offset_dest_index_phase3);
     free(data_reads_to_sort);
 
@@ -2578,7 +2607,7 @@ size_t * writeSam_discordant(
     
     char *char_buff_uncompressed_with_duplicates = NULL;
     size_t *disc_dup_offset_source = NULL;
-
+    
     char_buff_uncompressed_with_duplicates = markDuplicateDiscordant (char_buff_uncompressed, 
                                                             previous_local_readNum, 
                                                             header, 
@@ -2587,294 +2616,311 @@ size_t * writeSam_discordant(
                                                             &disc_dup_offset_source,
                                                             disc_dup_number);
     
-
+    
     // buff_reads_offsets_source is freed in markDuplicateDiscordant
 
 
     /** COMPRESSION PART * */
 
-    time_count = MPI_Wtime();
+    MPI_Comm newcomm;
+    int color = (previous_local_readNum > 0 );
+    MPI_Comm_split(split_comm, color, 0, &newcomm);
+        
+    if (previous_local_readNum){
 
-    BGZF *fp;
-    fp = calloc(1, sizeof(BGZF));
-    int block_length = MAX_BLOCK_SIZE;
-    int bytes_written;
-    int length = strlen(char_buff_uncompressed_with_duplicates);
+        /*
+	char_buff_uncompressed_with_duplicates = markDuplicateDiscordant (char_buff_uncompressed,
+                                                            previous_local_readNum,
+                                                            header,
+                                                            newcomm,
+                                                            buff_reads_offsets_source_sorted,
+                                                            &disc_dup_offset_source,
+                                                            disc_dup_number);
 
-    fp->open_mode = 'w';
-    fp->uncompressed_block_size = MAX_BLOCK_SIZE;
-    fp->uncompressed_block = malloc(MAX_BLOCK_SIZE);
-    fp->compressed_block_size = MAX_BLOCK_SIZE;
-    fp->compressed_block = malloc(MAX_BLOCK_SIZE);
-    fp->cache_size = 0;
-    fp->cache = kh_init(cache);
-    fp->block_address = 0;
-    fp->block_offset = 0;
-    fp->block_length = 0;
-    fp->compress_level = compression_level < 0 ? Z_DEFAULT_COMPRESSION : compression_level; // Z_DEFAULT_COMPRESSION==-1
+	*/
+    	time_count = MPI_Wtime();
 
-    if (fp->compress_level > 9) {
-        fp->compress_level = Z_DEFAULT_COMPRESSION;
+    	BGZF *fp;
+    	fp = calloc(1, sizeof(BGZF));
+    	int block_length = MAX_BLOCK_SIZE;
+    	int bytes_written;
+    	int length = strlen(char_buff_uncompressed_with_duplicates);
+
+    	fp->open_mode = 'w';
+    	fp->uncompressed_block_size = MAX_BLOCK_SIZE;
+    	fp->uncompressed_block = malloc(MAX_BLOCK_SIZE);
+    	fp->compressed_block_size = MAX_BLOCK_SIZE;
+    	fp->compressed_block = malloc(MAX_BLOCK_SIZE);
+    	fp->cache_size = 0;
+    	fp->cache = kh_init(cache);
+    	fp->block_address = 0;
+    	fp->block_offset = 0;
+    	fp->block_length = 0;
+    	fp->compress_level = compression_level < 0 ? Z_DEFAULT_COMPRESSION : compression_level; // Z_DEFAULT_COMPRESSION==-1
+
+    	if (fp->compress_level > 9) {
+        	fp->compress_level = Z_DEFAULT_COMPRESSION;
+    	}
+
+    	const bgzf_byte_t *input = (void *)char_buff_uncompressed_with_duplicates;
+    	int compressed_size = 0;
+
+    	if (fp->uncompressed_block == NULL) {
+        	fp->uncompressed_block = malloc(fp->uncompressed_block_size);
+    	}
+
+    	input = (void *)char_buff_uncompressed_with_duplicates;
+    	block_length = fp->uncompressed_block_size;
+    	bytes_written = 0;
+    	uint8_t *compressed_buff =  malloc(strlen(char_buff_uncompressed_with_duplicates) * sizeof(uint8_t));
+
+    	//if (rank == master_job_phase_2) {
+    	//    fprintf(stderr, "rank %d :::: start loop compression \n", rank);
+    	//}
+    	md_log_rank_debug(master_job_phase_2, "start loop compression \n");
+
+
+    	while (bytes_written < length) {
+        	int copy_length = bgzf_min(block_length - fp->block_offset, length - bytes_written);
+        	bgzf_byte_t *buffer = fp->uncompressed_block;
+        	memcpy(buffer + fp->block_offset, input, copy_length);
+        	fp->block_offset += copy_length;
+        	input += copy_length;
+        	bytes_written += copy_length;
+
+        	//if (fp->block_offset == block_length) {
+        	//we copy in a temp buffer
+        	while (fp->block_offset > 0) {
+            		int block_length;
+            		block_length = deflate_block(fp, fp->block_offset);
+
+            		//is it necessary?
+            		//if (block_length < 0) break;
+
+            		// count = fwrite(fp->compressed_block, 1, block_length, fp->file);
+            		// we replace the fwrite with a memcopy
+            		memcpy(compressed_buff + compressed_size, fp->compressed_block, block_length);
+            		compressed_size += block_length;
+            		fp->block_address += block_length;
+        	}
+
+        	//}
+    	}
+
+    	BGZF *fp_header;
+    	fp_header = calloc(1, sizeof(BGZF));
+    	uint8_t *compressed_header = NULL;
+    	int compressed_size_header = 0;
+
+    	if (rank == 0) {
+
+        	int block_length = MAX_BLOCK_SIZE;
+        	int bytes_written;
+        	int length = strlen(header);
+
+        	fp_header->open_mode = 'w';
+        	fp_header->uncompressed_block_size = MAX_BLOCK_SIZE;
+        	fp_header->uncompressed_block = malloc(MAX_BLOCK_SIZE);
+        	fp_header->compressed_block_size = MAX_BLOCK_SIZE;
+        	fp_header->compressed_block = malloc(MAX_BLOCK_SIZE);
+        	fp_header->cache_size = 0;
+        	fp_header->block_address = 0;
+        	fp_header->block_offset = 0;
+        	fp_header->block_length = 0;
+        	fp_header->compress_level = compression_level < 0 ? Z_DEFAULT_COMPRESSION : compression_level; // Z_DEFAULT_COMPRESSION==-1
+
+        	if (fp_header->compress_level > 9) {
+            		fp_header->compress_level = Z_DEFAULT_COMPRESSION;
+        	}
+
+
+        	const bgzf_byte_t *input = (void *)header;
+
+
+        	if (fp_header->uncompressed_block == NULL) {
+            		fp_header->uncompressed_block = malloc(fp_header->uncompressed_block_size);
+        	}
+
+        	input = (void *)header;
+        	block_length = fp_header->uncompressed_block_size;
+        	bytes_written = 0;
+        	compressed_header =  malloc(strlen(char_buff_uncompressed_with_duplicates) * sizeof(uint8_t));
+
+        	while (bytes_written < length) {
+            		int copy_length = bgzf_min(block_length - fp_header->block_offset, length - bytes_written);
+            		bgzf_byte_t *buffer = fp_header->uncompressed_block;
+            		memcpy(buffer + fp_header->block_offset, input, copy_length);
+            		fp_header->block_offset += copy_length;
+            		input += copy_length;
+            		bytes_written += copy_length;
+
+            		//if (fp->block_offset == block_length) {
+            		//we copy in a temp buffer
+            		while (fp_header->block_offset > 0) {
+                		int block_length;
+                		block_length = deflate_block(fp_header, fp_header->block_offset);
+
+                		//is it necessary?
+                		//if (block_length < 0) break;
+
+                		// count = fwrite(fp->compressed_block, 1, block_length, fp->file);
+                		// we replace the fwrite with a memcopy
+                		memcpy(compressed_header + compressed_size_header, fp_header->compressed_block, block_length);
+                		compressed_size_header += block_length;
+                		fp_header->block_address += block_length;
+            		}
+
+            	//}
+        	}
+    	}
+
+    	kh_destroy(cache, fp->cache);
+    	free(char_buff_uncompressed_with_duplicates);
+    	size_t compSize = compressed_size;
+
+    	//if (rank == master_job_phase_2) {
+    	//    fprintf(stderr, "Rank %d :::::[WRITE][COMPRESSION] Time for compressing %f seconds \n", rank, MPI_Wtime() - time_count);
+    	//}
+
+    	md_log_rank_debug(master_job_phase_2, "[WRITE][COMPRESSION] Time for compressing %f seconds \n", rank, MPI_Wtime() - time_count);
+
+
+    	/*
+    	 * We write results of compression
+    	 */
+
+    	size_t write_offset = 0;
+
+    	MPI_Offset *y  = (MPI_Offset *) calloc(num_proc, sizeof(MPI_Offset));
+    	MPI_Offset *y2 = (MPI_Offset *) calloc(num_proc + 1, sizeof(MPI_Offset));
+
+    	MPI_Gather(&compSize, 1, MPI_LONG_LONG_INT, y, 1, MPI_LONG_LONG_INT, 0, newcomm);
+
+    	//now we make a cumulative sum
+    	int i1 = 0;
+
+    	if (rank == 0) {
+        	for (i1 = 1; i1 < (num_proc + 1); i1++) {
+            		y2[i1] = y[i1 - 1];
+        	}
+
+        	for (i1 = 1; i1 < (num_proc + 1); i1++) {
+            		y2[i1] = y2[i1 - 1] + y2[i1];
+        	}
+
+        	for (i1 = 0; i1 < (num_proc + 1); i1++) {
+            		y2[i1] = y2[i1] + write_offset + compressed_size_header;
+        	}
+
+    	}
+
+    	MPI_Scatter(y2, 1, MPI_LONG_LONG_INT, &write_offset, 1, MPI_LONG_LONG_INT, 0, newcomm);
+    	// we create the path where to write for collective write
+    	path = (char *)malloc((strlen(output_dir) + strlen(chrName) + 40) * sizeof(char));
+    	sprintf(path, "%s/%s.gz", output_dir, chrName);
+
+    	//task FINE TUNING FINFO FOR WRITING OPERATIONS
+
+    	MPI_Info_set(finfo, "striping_factor", "12");
+    	//MPI_Info_set(finfo,"striping_unit","1610612736"); //1G striping
+    	MPI_Info_set(finfo, "striping_unit", "268435456"); //256 Mo
+
+    	MPI_Info_set(finfo, "nb_proc", "12");
+    	MPI_Info_set(finfo, "cb_nodes", "12");
+    	MPI_Info_set(finfo, "cb_block_size", "4194304"); /* 4194304 = 4 MBytes - should match FS block size */
+    	//MPI_Info_set(finfo,"cb_buffer_size","1610612736"); /* 128 MBytes (Optional) */
+
+
+    	ierr = MPI_File_open(newcomm, path, MPI_MODE_WRONLY  + MPI_MODE_CREATE, finfo, &out);
+
+    	if (ierr) {
+        	fprintf(stderr, "Rank %d failed to open %s.\nAborting.\n\n", rank, path);
+        	MPI_Abort(newcomm, ierr);
+        	exit(2);
+
+    	} else {
+        	//if (!rank) {
+        	//    fprintf(stderr, "Rank %d :::::[WRITE] %s.bam successfully opened\n", rank, chrName);
+        	//}
+        	md_log_debug("[WRITE] %s.bam successfully opened\n", chrName);
+    	}
+
+    	time_count = MPI_Wtime();
+
+    	if (rank == master_job_phase_2 ) {
+        	//fprintf(stderr, "Proc rank %d ::: we write the header \n", rank);
+        	md_log_rank_debug(master_job_phase_2, "we write the header\n");
+        	MPI_File_write(out, compressed_header, compressed_size_header, MPI_BYTE, MPI_STATUS_IGNORE);
+    	}
+
+    	free(compressed_header);
+
+    	MPI_File_set_view(out, write_offset, MPI_BYTE, MPI_BYTE, "native", finfo);
+    	MPI_File_write_all(out, compressed_buff, (size_t)compSize, MPI_BYTE, &status);
+
+    	//task FINE TUNING FINFO BACK TO READING OPERATIONS
+    	//MPI_Info_set(finfo,"striping_factor","12");
+    	//MPI_Info_set(finfo,"striping_unit","2684354560"); //1G striping
+
+    	//MPI_Info_set(finfo,"nb_proc","128");
+    	//MPI_Info_set(finfo,"cb_nodes","128");
+    	//MPI_Info_set(finfo,"cb_block_size","2684354560"); /* 4194304 MBytes - should match FS block size */
+    	//MPI_Info_set(finfo,"cb_buffer_size","2684354560"); /* 128 MBytes (Optional) */
+    	
+    	if (rank == master_job_phase_2 ) {
+        	static uint8_t magic[28] = "\037\213\010\4\0\0\0\0\0\377\6\0\102\103\2\0\033\0\3\0\0\0\0\0\0\0\0\0";
+        	//md_log_rank_debug(master_job_phase_2, "[WRITE] we write EOF \n");
+        	MPI_File_seek(out, 0, MPI_SEEK_END);
+        	MPI_File_write(out, magic, 28, MPI_BYTE, MPI_STATUS_IGNORE);
+    	}
+    	
+    	//MPI_Barrier(newcomm);
+
+
+    	//free(buff_compressed);
+    	free(compressed_buff);
+
+    	//if (rank == master_job_phase_2) {
+    	//    fprintf(stderr, "Rank %d :::::[WRITE][WRITING BGZF] Time for chromosome %s writing %f seconds\n", rank, chrName, MPI_Wtime() - time_count);
+    	//}
+
+    	md_log_rank_debug(master_job_phase_2, "[WRITE][WRITING BGZF] Time for chromosome %s writing %f seconds\n", chrName, MPI_Wtime() - time_count);
+
+    	free(fp->uncompressed_block);
+    	free(fp->compressed_block);
+    	free_cache(fp);
+    	free(fp);
+
+    	if (rank == 0) {
+        	free(fp_header->uncompressed_block);
+        	free(fp_header->compressed_block);
+        	free_cache(fp_header);
+    	}
+
+    	free(fp_header);
+
+
+    	MPI_File_close(&out);
+    	free(path);
+
+    	for (m2 = 0; m2 < num_proc; m2++) {
+        	if (data2[m2]) {
+            		free(data2[m2]);
+        	}
+    	}
+
+    	if (data2) {
+        	free(data2);
+    	}
+
+    	free(offsets_sorted);
+    	free(data_size_to_sort);
+    	free(y);
+    	free(y2);
+        
     }
 
-    const bgzf_byte_t *input = (void *)char_buff_uncompressed_with_duplicates;
-    int compressed_size = 0;
-
-    if (fp->uncompressed_block == NULL) {
-        fp->uncompressed_block = malloc(fp->uncompressed_block_size);
-    }
-
-    input = (void *)char_buff_uncompressed_with_duplicates;
-    block_length = fp->uncompressed_block_size;
-    bytes_written = 0;
-    uint8_t *compressed_buff =  malloc(strlen(char_buff_uncompressed_with_duplicates) * sizeof(uint8_t));
-
-    //if (rank == master_job_phase_2) {
-    //    fprintf(stderr, "rank %d :::: start loop compression \n", rank);
-    //}
-    md_log_rank_debug(master_job_phase_2, "start loop compression \n");
-
-
-    while (bytes_written < length) {
-        int copy_length = bgzf_min(block_length - fp->block_offset, length - bytes_written);
-        bgzf_byte_t *buffer = fp->uncompressed_block;
-        memcpy(buffer + fp->block_offset, input, copy_length);
-        fp->block_offset += copy_length;
-        input += copy_length;
-        bytes_written += copy_length;
-
-        //if (fp->block_offset == block_length) {
-        //we copy in a temp buffer
-        while (fp->block_offset > 0) {
-            int block_length;
-            block_length = deflate_block(fp, fp->block_offset);
-
-            //is it necessary?
-            //if (block_length < 0) break;
-
-            // count = fwrite(fp->compressed_block, 1, block_length, fp->file);
-            // we replace the fwrite with a memcopy
-            memcpy(compressed_buff + compressed_size, fp->compressed_block, block_length);
-            compressed_size += block_length;
-            fp->block_address += block_length;
-        }
-
-        //}
-    }
-
-    BGZF *fp_header;
-    fp_header = calloc(1, sizeof(BGZF));
-    uint8_t *compressed_header = NULL;
-    int compressed_size_header = 0;
-
-    if (rank == 0) {
-
-        int block_length = MAX_BLOCK_SIZE;
-        int bytes_written;
-        int length = strlen(header);
-
-        fp_header->open_mode = 'w';
-        fp_header->uncompressed_block_size = MAX_BLOCK_SIZE;
-        fp_header->uncompressed_block = malloc(MAX_BLOCK_SIZE);
-        fp_header->compressed_block_size = MAX_BLOCK_SIZE;
-        fp_header->compressed_block = malloc(MAX_BLOCK_SIZE);
-        fp_header->cache_size = 0;
-        fp_header->block_address = 0;
-        fp_header->block_offset = 0;
-        fp_header->block_length = 0;
-        fp_header->compress_level = compression_level < 0 ? Z_DEFAULT_COMPRESSION : compression_level; // Z_DEFAULT_COMPRESSION==-1
-
-        if (fp_header->compress_level > 9) {
-            fp_header->compress_level = Z_DEFAULT_COMPRESSION;
-        }
-
-
-        const bgzf_byte_t *input = (void *)header;
-
-
-        if (fp_header->uncompressed_block == NULL) {
-            fp_header->uncompressed_block = malloc(fp_header->uncompressed_block_size);
-        }
-
-        input = (void *)header;
-        block_length = fp_header->uncompressed_block_size;
-        bytes_written = 0;
-        compressed_header =  malloc(strlen(char_buff_uncompressed_with_duplicates) * sizeof(uint8_t));
-
-        while (bytes_written < length) {
-            int copy_length = bgzf_min(block_length - fp_header->block_offset, length - bytes_written);
-            bgzf_byte_t *buffer = fp_header->uncompressed_block;
-            memcpy(buffer + fp_header->block_offset, input, copy_length);
-            fp_header->block_offset += copy_length;
-            input += copy_length;
-            bytes_written += copy_length;
-
-            //if (fp->block_offset == block_length) {
-            //we copy in a temp buffer
-            while (fp_header->block_offset > 0) {
-                int block_length;
-                block_length = deflate_block(fp_header, fp_header->block_offset);
-
-                //is it necessary?
-                //if (block_length < 0) break;
-
-                // count = fwrite(fp->compressed_block, 1, block_length, fp->file);
-                // we replace the fwrite with a memcopy
-                memcpy(compressed_header + compressed_size_header, fp_header->compressed_block, block_length);
-                compressed_size_header += block_length;
-                fp_header->block_address += block_length;
-            }
-
-            //}
-        }
-    }
-
-    kh_destroy(cache, fp->cache);
-    free(char_buff_uncompressed_with_duplicates);
-    size_t compSize = compressed_size;
-
-    //if (rank == master_job_phase_2) {
-    //    fprintf(stderr, "Rank %d :::::[WRITE][COMPRESSION] Time for compressing %f seconds \n", rank, MPI_Wtime() - time_count);
-    //}
-
-    md_log_rank_debug(master_job_phase_2, "[WRITE][COMPRESSION] Time for compressing %f seconds \n", rank, MPI_Wtime() - time_count);
-
-
-    /*
-     * We write results of compression
-     */
-
-    size_t write_offset = 0;
-
-    MPI_Offset *y  = (MPI_Offset *) calloc(num_proc, sizeof(MPI_Offset));
-    MPI_Offset *y2 = (MPI_Offset *) calloc(num_proc + 1, sizeof(MPI_Offset));
-
-    MPI_Gather(&compSize, 1, MPI_LONG_LONG_INT, y, 1, MPI_LONG_LONG_INT, 0, split_comm);
-
-    //now we make a cumulative sum
-    int i1 = 0;
-
-    if (rank == 0) {
-        for (i1 = 1; i1 < (num_proc + 1); i1++) {
-            y2[i1] = y[i1 - 1];
-        }
-
-        for (i1 = 1; i1 < (num_proc + 1); i1++) {
-            y2[i1] = y2[i1 - 1] + y2[i1];
-        }
-
-        for (i1 = 0; i1 < (num_proc + 1); i1++) {
-            y2[i1] = y2[i1] + write_offset + compressed_size_header;
-        }
-
-    }
-
-    MPI_Scatter(y2, 1, MPI_LONG_LONG_INT, &write_offset, 1, MPI_LONG_LONG_INT, 0, split_comm);
-    // we create the path where to write for collective write
-    path = (char *)malloc((strlen(output_dir) + strlen(chrName) + 40) * sizeof(char));
-    sprintf(path, "%s/%s.gz", output_dir, chrName);
-
-
-    //task FINE TUNING FINFO FOR WRITING OPERATIONS
-
-    MPI_Info_set(finfo, "striping_factor", "12");
-    //MPI_Info_set(finfo,"striping_unit","1610612736"); //1G striping
-    MPI_Info_set(finfo, "striping_unit", "268435456"); //256 Mo
-
-    MPI_Info_set(finfo, "nb_proc", "12");
-    MPI_Info_set(finfo, "cb_nodes", "12");
-    MPI_Info_set(finfo, "cb_block_size", "4194304"); /* 4194304 = 4 MBytes - should match FS block size */
-    //MPI_Info_set(finfo,"cb_buffer_size","1610612736"); /* 128 MBytes (Optional) */
-
-
-    ierr = MPI_File_open(split_comm, path, MPI_MODE_WRONLY  + MPI_MODE_CREATE, finfo, &out);
-
-    if (ierr) {
-        fprintf(stderr, "Rank %d failed to open %s.\nAborting.\n\n", rank, path);
-        MPI_Abort(split_comm, ierr);
-        exit(2);
-
-    } else {
-        //if (!rank) {
-        //    fprintf(stderr, "Rank %d :::::[WRITE] %s.bam successfully opened\n", rank, chrName);
-        //}
-        md_log_debug("[WRITE] %s.bam successfully opened\n", chrName);
-    }
-
-    time_count = MPI_Wtime();
-
-    if (rank == master_job_phase_2 ) {
-        //fprintf(stderr, "Proc rank %d ::: we write the header \n", rank);
-        md_log_rank_debug(master_job_phase_2, "we write the header\n");
-        MPI_File_write(out, compressed_header, compressed_size_header, MPI_BYTE, MPI_STATUS_IGNORE);
-    }
-
-    free(compressed_header);
-
-    MPI_File_set_view(out, write_offset, MPI_BYTE, MPI_BYTE, "native", finfo);
-    MPI_File_write_all(out, compressed_buff, (size_t)compSize, MPI_BYTE, &status);
-
-    //task FINE TUNING FINFO BACK TO READING OPERATIONS
-    //MPI_Info_set(finfo,"striping_factor","12");
-    //MPI_Info_set(finfo,"striping_unit","2684354560"); //1G striping
-
-    //MPI_Info_set(finfo,"nb_proc","128");
-    //MPI_Info_set(finfo,"cb_nodes","128");
-    //MPI_Info_set(finfo,"cb_block_size","2684354560"); /* 4194304 MBytes - should match FS block size */
-    //MPI_Info_set(finfo,"cb_buffer_size","2684354560"); /* 128 MBytes (Optional) */
-    /*
-    if (rank == master_job_phase_2 ) {
-        static uint8_t magic[28] = "\037\213\010\4\0\0\0\0\0\377\6\0\102\103\2\0\033\0\3\0\0\0\0\0\0\0\0\0";
-        md_log_rank_debug(master_job_phase_2, "[WRITE] we write EOF \n");
-        MPI_File_seek(out, 0, MPI_SEEK_END);
-        MPI_File_write(out, magic, 28, MPI_BYTE, MPI_STATUS_IGNORE);
-    }
-    */
-    MPI_Barrier(split_comm);
-
-
-    //free(buff_compressed);
-    free(compressed_buff);
-
-    //if (rank == master_job_phase_2) {
-    //    fprintf(stderr, "Rank %d :::::[WRITE][WRITING BGZF] Time for chromosome %s writing %f seconds\n", rank, chrName, MPI_Wtime() - time_count);
-    //}
-
-    md_log_rank_debug(master_job_phase_2, "[WRITE][WRITING BGZF] Time for chromosome %s writing %f seconds\n", chrName, MPI_Wtime() - time_count);
-
-    free(fp->uncompressed_block);
-    free(fp->compressed_block);
-    free_cache(fp);
-    free(fp);
-
-    if (rank == 0) {
-        free(fp_header->uncompressed_block);
-        free(fp_header->compressed_block);
-        free_cache(fp_header);
-    }
-
-    free(fp_header);
-
-
-    MPI_File_close(&out);
-    free(path);
-
-    for (m2 = 0; m2 < num_proc; m2++) {
-        if (data2[m2]) {
-            free(data2[m2]);
-        }
-    }
-
-    if (data2) {
-        free(data2);
-    }
-
-    free(offsets_sorted);
-    free(data_size_to_sort);
-    free(y);
-    free(y2);
-    malloc_trim(0);
-
+    MPI_Comm_free(&newcomm);
     return disc_dup_offset_source;
 }
 
@@ -3189,12 +3235,12 @@ void writeSam_unmapped(
 
     //do a gather in replacement of the the ring pass
     MPI_Scatter(y2, 1, MPI_LONG_LONG_INT, &write_offset, 1, MPI_LONG_LONG_INT, 0, split_comm);
-
-
+    
     // we create the path where to write for collective write
     path = (char *)malloc((strlen(output_dir) + strlen(chrName) + 40) * sizeof(char));
     sprintf(path, "%s/%s.gz", output_dir, chrName);
 
+    //fprintf(stderr, "Rank %d :::::[WRITE] call file open path = %s \n", split_rank, path);
     ierr = MPI_File_open(split_comm, path, MPI_MODE_WRONLY  + MPI_MODE_CREATE, finfo, &out);
 
     if (ierr) {
@@ -3204,15 +3250,22 @@ void writeSam_unmapped(
     }
 
     time_count = MPI_Wtime();
+     //fprintf(stderr, "Rank %d :::::[WRITE] call header file_write\n", split_rank);
 
     if (split_rank == 0 ) {
-        MPI_File_write(out, compressed_header, compressed_size_header, MPI_BYTE, MPI_STATUS_IGNORE);
+		fprintf(stderr, "Rank %d :::::[WRITE] call header file_write\n", split_rank);	
+    	    MPI_File_write(out, compressed_header, compressed_size_header, MPI_BYTE, MPI_STATUS_IGNORE);
         //we update write _header
     }
 
+     //fprintf(stderr, "Rank %d :::::[WRITE] after header file_write\n", split_rank);
+
     MPI_Barrier(split_comm);
     //task WRITING OPERATIONS FOR UNMAPPED READS
+
     MPI_File_set_view(out, write_offset, MPI_BYTE, MPI_BYTE, "native", finfo);
+
+    //fprintf(stderr, "Rank %d :::::[WRITE] call file_write\n", split_rank);
     MPI_File_write(out, char_buff_compressed, (size_t)compressed_size, MPI_BYTE, &status);
     /*
     if (split_rank == 0 ) {
@@ -3255,7 +3308,6 @@ void writeSam_unmapped(
     free(y);
     free(y2);
     free(path);
-    malloc_trim(0);
 }
 
 
@@ -3264,6 +3316,8 @@ void writeSam_any_dim(
     int rank,
     char *output_dir,
     char *header,
+    CHTbl *htblref,
+    CHTbl *htblrg,
     size_t local_readNum,
     size_t total_num_read,
     char *chrName,
@@ -3279,8 +3333,7 @@ void writeSam_any_dim(
     int *new_rank,
     char *data,
     size_t start_offset_in_file,
-    size_t *disc_dup_offset_source,  //all the discordant duplicate offset in original sam file
-    size_t *disc_dup_number) {
+    skip_list *list) {
 
 
     /*
@@ -5025,11 +5078,12 @@ void writeSam_any_dim(
 
         char_buff_uncompressed_with_duplicates = markDuplicate (char_buff_uncompressed, 
                                                             local_readNum, 
-                                                            header, 
+                                                            header,
+							    htblref,
+							    htblrg, 
                                                             split_comm_2,
                                                             buff_reads_offsets_source_sorted, 
-                                                            disc_dup_offset_source,
-                                                            disc_dup_number);
+							    list);
         /** COMPRESSION PART * */
         MPI_Barrier(split_comm_2);
         time_count = MPI_Wtime();

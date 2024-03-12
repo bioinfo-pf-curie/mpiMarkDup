@@ -169,11 +169,9 @@ void llist_clear(llist_t *l) {
     lnode_t *x = l->nil->next;
 
     while (x != l->nil) {
-        //assert(x != x->next);
         lnode_t *tmp = x;
-        //printf("free %s\n", x->read->Qname);
         x = x->next;
-        free(tmp);
+        if (tmp) free(tmp);
     }
 
     l->head = l->nil;
@@ -192,14 +190,7 @@ void llist_clear(llist_t *l) {
 void llist_destruct(llist_t *l) {
     lnode_t *x = l->head;
 
-    while (x != l->nil) {
-        lnode_t *tmp = x;
-        x = x->next;
-        freeRead(tmp->read);
-        tmp->read = NULL;
-        free(tmp);
-    }
-
+    while (x != l->nil) x = x->next;
     free(l->nil);
     free(l);
 }

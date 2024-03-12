@@ -680,8 +680,12 @@ void shareHpAndConstructHtbl(hashTable *htbl, readInfo **arr, size_t size, MPI_C
     }
 
     if (rank == 0) {
-        hp.a = rand() + 1;
-        hp.b = rand() + 1;
+        //hp.a = rand() + 1;
+        //hp.b = rand() + 1;
+        hp.a=1798187466;
+        hp.b=1760399861;
+        htbl->prime=123049;
+
         hp.m = maxSize;
 
         hashTableInitWithHp(htbl, hp, arr, size);

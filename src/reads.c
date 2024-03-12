@@ -45,8 +45,8 @@ int freeRead(readInfo* read) {
         free(read->cigar);
         read->cigar = NULL;
     }
-
-    free(read);
+    
+    //free(read);
     return 0;
 }
 

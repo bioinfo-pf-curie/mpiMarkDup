@@ -56,10 +56,11 @@ readInfo *readParsing (char *sam_buff,
                         Interval *intervalByProc, 
                         size_t readIndex,
                         size_t counter, 
-                        chrInfo *chr, 
-                        lbInfo *lb,
                         size_t *buffer_offset_source,  
-                        MPI_Comm comm);
+                        MPI_Comm comm,
+			CHTbl *htblref,
+			CHTbl *htblrg
+			);
 
 void insertReadInList(llist_t *l, readInfo *read);
 int ComputePercentageIncrement(size_t readNum, int readSecRatio, int second);
@@ -85,7 +86,9 @@ size_t getMateRankReadSizeBeforeBruck(llist_t *list, mateInfo **mates) ;
 int getPosFromLine(char *samLine);
 char* getReadTagValue(char *token, const char *tag);
 
-int parseLibraries(char *bufferReads, 
+int parseLibraries(CHTbl *htblref,
+		   CHTbl *htblrg,
+		    char *bufferReads, 
                     Interval *intervalByProc, 
                     llist_t *fragList, 
                     llist_t *readEndsList, 
@@ -93,8 +96,6 @@ int parseLibraries(char *bufferReads,
                     char ***samTokenLines, 
                     size_t readNum, 
                     size_t readIndex, 
-                    chrInfo *chr, 
-                    lbInfo *lb, 
                     size_t *reads_buffer_offset_source,
                     MPI_Comm comm);
 
@@ -102,10 +103,11 @@ int parseLibraries(char *bufferReads,
 char *markDuplicate (char *bufferReads, 
                     size_t readNum, 
                     char *header, 
+		    CHTbl *htblref,
+		    CHTbl *htblrg,
                     MPI_Comm comm, 
                     size_t *buffer_read_offset_source,
-                    size_t *all_discord_dup_offset, 
-                    size_t *total_disc_dup);
+		    skip_list *list);
 
 int markMateDuplicateFlag(hashTable *htbl, readInfo *read, int d);
 char* writeBuff(char **samTokenLines, readInfo **readArr, size_t readNum);

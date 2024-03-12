@@ -26,7 +26,7 @@
 */
 
 #ifndef PARSER
-	#define PARSER
+#define PARSER
 
 #include <assert.h>
 #include <stdlib.h>
@@ -37,6 +37,7 @@
 
 #include "tokenizer.h"
 #include "time.h"
+#include "mpiSortUtils.h"
 
 #define MAX_LINE_SIZE 2048
 #define UNMAPPED "unmapped"
@@ -55,12 +56,10 @@ struct Flags
 	unsigned char left : 1;
 	unsigned char replace_gene_with_mgene:1;
 };
-
+/*
 typedef struct Read
 {
-	/*
-	 * task: REMOVE STRING
-	 */
+	
 	char* string;
 	size_t coord;
 	size_t offset_source_file;
@@ -69,7 +68,7 @@ typedef struct Read
 	struct Read* next;
 	struct Read* link;
 } Read; //attribute packed slows by x2 times
-
+*/
 
 typedef struct Read_chain
 {
@@ -104,7 +103,9 @@ void init_goff(MPI_File mpi_filed,unsigned int headerSize,size_t fsize,int numpr
  * \param chrNames Reference array to the chromosomes names.
  * \param preads The reads linked list. Will be set in this function.
  */
-void parser_paired(char *localData, int rank, size_t start_offset, unsigned char threshold,int nbchrom, size_t **preadNumberByChr, char ** chrNames, Read ***preads);
+
+int parser_paired(char *localData, size_t size2compute, int rank, size_t start_offset, unsigned char threshold,int nbchrom, size_t **preadNumberByChr,
+                Read ***preads,CHTbl *ref_htbl);
 
 /**
  * \brief Extract integer number of current chromosome given as a string

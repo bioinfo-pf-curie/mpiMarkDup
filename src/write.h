@@ -39,11 +39,25 @@
 #include "qksort.h"
 #include "writeUtils.h"
 #include "parallelBitonicSort.h"
+/*
+typedef struct skip_node_t {
+	int key, level; 
+	struct skip_node_t *prev, *next; 
+	struct skip_node_t *down, *up; 
+} skip_node; 
 
+
+typedef struct skip_list_t {
+	skip_node *head, *tail; 
+	int nElems;
+} skip_list;
+*/
 void writeSam(
 		int rank,
 		char* output_dir,
 		char* header,
+		CHTbl *htblref,
+		CHTbl *htblrg,
 		size_t local_readNum,
 		char* chrName,
 		int total_num_proc,  //this is the number of proc in split communication
@@ -59,9 +73,7 @@ void writeSam(
 		char* data,
 		size_t offset_data_in_file,
 		size_t original_local_readNum,
-		size_t final_local_readNum,
-		size_t *disc_dup_offset_source,
-    	size_t *disc_dup_number
+		skip_list *list
 		);
 
 size_t *writeSam_discordant(
@@ -85,7 +97,6 @@ size_t *writeSam_discordant(
     char *data,
     size_t start_offset_in_file,
     size_t previous_local_readNum,
-    size_t final_local_readNum,
     size_t *disc_dup_number
 );
 
@@ -323,6 +334,8 @@ void writeSam_any_dim(
 		int rank,
 		char* output_dir,
 		char* header,
+		CHTbl *htblref,
+		CHTbl *htblrg,
 		size_t local_readNum,
 		size_t total_num_read,
 		char* chrName,
@@ -338,8 +351,7 @@ void writeSam_any_dim(
 		int* new_rank,
 		char *data,
 		size_t start_offset_in_file,
-		size_t *disc_dup_offset_source,
-        size_t *disc_dup_number
+		skip_list *list
 		);
 
 #endif

@@ -324,7 +324,7 @@ readInfo *readParsingDiscordant (char *sam_buff,
     int i = 0;
     size_t score;
     readInfo *read = calloc(1, sizeof(readInfo));
-   
+    assert(read); 
     MPI_Comm_rank(comm, &rank);
     MPI_Comm_size(comm, &num_proc);
 
@@ -776,7 +776,7 @@ void findDuplicaDiscordant(llist_t *fragList, llist_t *readEndsList, hashTable *
 char *markDuplicateDiscordant (char *bufferReads, 
                                 size_t readNum, 
                                 char *header, 
-                                MPI_Comm comm,
+                                MPI_Comm comm1,
                                 size_t *disc_offsets_source,
                                 size_t **disc_dup_offset_source,
                                 size_t *disc_dup_number) {
@@ -784,39 +784,52 @@ char *markDuplicateDiscordant (char *bufferReads,
     //MPI_Comm previousComm = md_get_log_comm();
     //md_set_log_comm(comm);
 
-    int rank, num_proc;
-    MPI_Comm_rank(comm, &rank);
-    MPI_Comm_size(comm, &num_proc);
-    double timeStamp, timeStart = MPI_Wtime();
+        MPI_Comm comm;
+        int color = (readNum > 0 );
+	MPI_Comm previousComm = md_get_log_comm();
+        MPI_Comm_split(comm1, color, 0, &comm);
+	char *newBuff = NULL;
+	md_set_log_comm(comm);
+
+	if (readNum) {
+		
+		int rank, num_proc;
+    		MPI_Comm_rank(comm, &rank);
+    		MPI_Comm_size(comm, &num_proc);
+    		double timeStamp, timeStart = MPI_Wtime();
   
-    chrInfo chr;
-    lbInfo lb;
-    initChrInfo(&chr, header);
-    initLbInfo(&lb, header);
+    		chrInfo chr;
+    		lbInfo lb;
+    		initChrInfo(&chr, header);
+    		initLbInfo(&lb, header);
 
-    if (chr.chrNum == 0) {
-        md_log_error("There isn't chromosome in the header, please check the input sam file.");
-    }
+    		if (chr.chrNum == 0) 
+        		md_log_error("There isn't chromosome in the header, please check the input sam file.");
+    
+    		size_t *readNumByProc = calloc(num_proc,  sizeof(Interval)), readIndexOffset = 0;
+    		MPI_Allgather(&readNum, 1, MPI_SIZE_T, readNumByProc, 1, MPI_SIZE_T, comm);
 
-    size_t *readNumByProc = calloc(num_proc,  sizeof(Interval)), readIndexOffset = 0;
-    MPI_Allgather(&readNum, 1, MPI_SIZE_T, readNumByProc, 1, MPI_SIZE_T, comm);
+    		for (int i = 0; i < rank; ++i) readIndexOffset += readNumByProc[i];
 
-    for (int i = 0; i < rank; ++i) {
-        readIndexOffset += readNumByProc[i];
-    }
+    		llist_t *fragList = NULL;
+        	llist_t *readEndsList = NULL;
 
+		Interval interval  = {.firstCoord = 0, .lastCoord  = 0};
 
-    llist_t *fragList = llist_create(), *readEndsList = llist_create();
+		interval = getIntervalFromBuffer(bufferReads, readNum);
+    	
+		Interval *intervalByProc = gatherIntervalByProc(interval, comm);
+    		md_log_all_debug("readNum=%zu, interval.firstCoord=%u, interval.lastCoord=%u\n", readNum, interval.firstCoord, interval.lastCoord);
 
-    Interval interval = getIntervalFromBuffer(bufferReads, readNum);
-    Interval *intervalByProc = gatherIntervalByProc(interval, comm);
-    md_log_all_debug("readNum=%zu, interval.firstCoord=%u, interval.lastCoord=%u\n", readNum, interval.firstCoord, interval.lastCoord);
+    		md_log_debug("Parse and cluster reads ...\n");
+    		timeStamp = MPI_Wtime();
+    		readInfo **readArr = NULL;
+    		char **samTokenLines;
+    		
+		fragList = llist_create();
+		readEndsList = llist_create();
 
-    md_log_debug("Parse and cluster reads ...\n");
-    timeStamp = MPI_Wtime();
-    readInfo **readArr;
-    char **samTokenLines;
-    parseLibrariesDiscordant(bufferReads, 
+    		parseLibrariesDiscordant(bufferReads, 
                     intervalByProc, 
                     fragList, 
                     readEndsList, 
@@ -828,195 +841,152 @@ char *markDuplicateDiscordant (char *bufferReads,
                     &lb, 
                     disc_offsets_source,
                     comm);
+    	
+    		md_log_debug("End of parsing and clustering %f seconds\n", MPI_Wtime() - timeStamp);
 
-    md_log_debug("End of parsing and clustering %f seconds\n", MPI_Wtime() - timeStamp);
+    		md_log_debug("Construct perfect hashing table ...\n");
+    		timeStamp = MPI_Wtime();
+    		hashTable *htbl = malloc(sizeof(hashTable));
+    		readInfo **readArrWithExternal;
 
-    md_log_debug("Construct perfect hashing table ...\n");
-    timeStamp = MPI_Wtime();
-    hashTable *htbl = malloc(sizeof(hashTable));
-    readInfo **readArrWithExternal;
-
-    size_t totalReadWithFictitiousMate = fillReadAndFictitiousMate(readArr, &readArrWithExternal, readNum);
-    //fprintf(stderr, " totalReadWithFictitiousMate = %zu \n", totalReadWithFictitiousMate);
+    		size_t totalReadWithFictitiousMate = fillReadAndFictitiousMate(readArr, &readArrWithExternal, readNum);
+    		//fprintf(stderr, " totalReadWithFictitiousMate = %zu \n", totalReadWithFictitiousMate);
    
-    shareHpAndConstructHtbl(htbl, readArrWithExternal, totalReadWithFictitiousMate, comm);
-    free(readArrWithExternal);
+    		shareHpAndConstructHtbl(htbl, readArrWithExternal, totalReadWithFictitiousMate, comm);
+    		free(readArrWithExternal);
     
-    md_log_debug("Perfect hash table is constructed %f seconds\n", MPI_Wtime() - timeStamp);
+    		md_log_debug("Perfect hash table is constructed %f seconds\n", MPI_Wtime() - timeStamp);
 
 
-    /**
-     * TODO: add a phase of communication here for completion of 'cluster' in overlapped range case.
-     *       - Received read should be insert in fragList via insertReadInList()
-     *       - We should verify if we can construct a pair with these reads, to do this
-     *         we may consider to use khash in function markDuplicates and pass it to parseLibraries().
-     *         Hence, We can use this khash here to know if read is seen before or not.
-     *       - If we see read's mate before we can construct pairs and insert them in readEndsList
-     *         via function buildReadEnds().
-     */
+    		/**
+     		* TODO: add a phase of communication here for completion of 'cluster' in overlapped range case.
+     		*       - Received read should be insert in fragList via insertReadInList()
+     		*       - We should verify if we can construct a pair with these reads, to do this
+     		*         we may consider to use khash in function markDuplicates and pass it to parseLibraries().
+     		*         Hence, We can use this khash here to know if read is seen before or not.
+     		*       - If we see read's mate before we can construct pairs and insert them in readEndsList
+     		*         via function buildReadEnds().
+     		*/
 
 
-    /* TRACE fragList */
+    		/* TRACE fragList */
     
-    /* End TRACE */
+    		/* End TRACE */
 
-    md_log_debug("Start to exchange mates ...\n");
-    timeStamp = MPI_Wtime();
-    exchangeExternFragDiscordant(fragList, readEndsList, htbl, comm) ;
-    md_log_debug("Finished to exchange mate in %f seconds\n", MPI_Wtime() - timeStamp);
-
-
-    /*
-    size_t fragList_size = 0;
-    size_t readEnds_size = fragList_size = 0;
-
-    for (lnode_t *node = fragList->head; node != fragList->nil; node = node->next) {
-        //readCounter = readIndex,
-        //md_log_trace("lb=%zu, chr=%zu, unclippedCoordPos=%zu, orientation=%zu, mchr=%zu, mateUnclippedCoordPos=%zu, rindex=%zu, mindex=%zu\n", read->readLb, read->readChromosome, read->unclippedCoordPos, read->orientation, read->mateChromosome, read->coordMatePos, read->indexAfterSort, read->mateIndexAfterSort);
-        fragList_size++;
-    }
+    		md_log_debug("Start to exchange mates ...\n");
+    		timeStamp = MPI_Wtime();
+        	exchangeExternFragDiscordant(fragList, readEndsList, htbl, comm) ;
     
-    for (lnode_t *node = readEndsList->head; node != readEndsList->nil; node = node->next) {
-        //readInfo *read = node->read;
-        //md_log_trace("lb=%zu, chr=%zu, unclippedCoordPos=%zu, orientation=%zu, mchr=%zu, mateUnclippedCoordPos=%zu, rindex=%zu, mindex=%zu\n", read->readLb, read->readChromosome, read->unclippedCoordPos, read->orientation, read->mateChromosome, read->coordMatePos, read->indexAfterSort, read->mateIndexAfterSort);
-        readEnds_size++;
-    }
+    		md_log_debug("Finished to exchange mate in %f seconds\n", MPI_Wtime() - timeStamp);
+    		md_log_debug("Start to sort fragments list and read ends list ...\n");
+    		timeStamp = MPI_Wtime();
 
-    fprintf(stderr, " TRACE 3 readEndsList size = %zu :::: fragList size =%zu \n", readEnds_size, fragList_size);
-    */
+    		/* Sort lists using merge sort.
+     		* We use merge sort instead of insertion sort because
+     		* insertion sort is too slow in discordant case.
+     		* TODO: If this merge sort work fine, replace insertReadInList() by
+     		*       llist_append() in all occurrences.
+     		* */
+    		llist_merge_sort(fragList, 1);
+    		llist_merge_sort(readEndsList, 0);
+    		md_log_debug("Finished to sort list in %f seconds\n", MPI_Wtime() - timeStamp);
 
-    md_log_debug("Start to sort fragments list and read ends list ...\n");
-    timeStamp = MPI_Wtime();
-
-    /* Sort lists using merge sort.
-     * We use merge sort instead of insertion sort because
-     * insertion sort is too slow in discordant case.
-     * TODO: If this merge sort work fine, replace insertReadInList() by
-     *       llist_append() in all occurrences.
-     * */
-    llist_merge_sort(fragList, 1);
-    llist_merge_sort(readEndsList, 0);
-
-    /*
-    size_t readEnds_size = 0;
-    size_t fragList_size = 0;
+    		md_log_info("Start to find duplicate ...\n");
+    		timeStamp = MPI_Wtime();
+    		int localDuplicates = 0, localOpticalDuplicates = 0, totalDuplicates = 0, totalOpticalDuplicates = 0;
     
-    for (lnode_t *node = fragList->head; node != fragList->nil; node = node->next) {
+    		findDuplicaDiscordant(fragList, readEndsList, htbl, &localDuplicates, &localOpticalDuplicates, comm) ;
+        	md_log_info("Finished to find duplicates in %f seconds\n", totalDuplicates, totalOpticalDuplicates,  MPI_Wtime() - timeStamp);
+    		md_log_info("Gather duplicates results ...\n");
+    
+    		timeStamp = MPI_Wtime();
+       
+    		MPI_Reduce(&localDuplicates, &totalDuplicates, 1, MPI_INT, MPI_SUM, 0, comm);
+    		MPI_Reduce(&localOpticalDuplicates, &totalOpticalDuplicates, 1, MPI_INT, MPI_SUM, 0, comm);
+    		md_log_info("Found %d duplicates and %d optical duplicates in %f seconds\n\n", totalDuplicates, totalOpticalDuplicates,  MPI_Wtime() - timeStamp);
+
+    		timeStamp = MPI_Wtime();
+
+    		newBuff = writeBuff(samTokenLines, readArr, readNum);
+    
+    		free(samTokenLines);
+    		free(intervalByProc);
+    		free(readNumByProc);
+    
+    
+    		//if (tmp_disc_dup_offset_source) free(tmp_disc_dup_offset_source);
+    		if (disc_offsets_source)        free(disc_offsets_source);
+
+    		freeChrInfo(&chr);
+    		freeLbInfo(&lb);
+    		hashTableDestroy(htbl);
+
+    		//md_set_log_comm(previousComm);
+
+    		MPI_Barrier(comm);
+    		md_log_trace("Finished to free data structures %f seconds\n", MPI_Wtime() - timeStamp);
+    		md_log_debug("Finished to mark buffer %f seconds\n", MPI_Wtime() - timeStamp);
+    		/*
+        	///////////////////////////
+        	//////////////////////////
+        	Now we fill up the disc_offset source vector
+        	//////////////////////////
+        	//////////////////////////
+        	//////////////////////////
+    		*/
+
+    		disc_dup_number[0] = localDuplicates + localOpticalDuplicates;
+
+    		//we return the total of duplicate for this rank
+   
+    		// we loop the readArr
+    		// we use data_offset_source to check 
+    		// the discordant reads
+    		size_t j;
+    		size_t index_in_offset = 0;
+
+     		for ( j = 0; j < readNum; j++) {
+        		//we search discordant reads
+        		if (!readArr[j] || !readArr[j]->d) continue;
+        		else if (readArr[j]->d == 1) index_in_offset++;            
         
-        //md_log_trace("lb=%zu, chr=%zu, unclippedCoordPos=%zu, orientation=%zu, mchr=%zu, mateUnclippedCoordPos=%zu, rindex=%zu, mindex=%zu\n", read->readLb, read->readChromosome, read->unclippedCoordPos, read->orientation, read->mateChromosome, read->coordMatePos, read->indexAfterSort, read->mateIndexAfterSort);
-        fragList_size++;
-    }
+    		}
 
+    		size_t *disc_dup_offset_source_tmp = calloc( index_in_offset,  sizeof(size_t));
     
-    
-    for (lnode_t *node = readEndsList->head; node != readEndsList->nil; node = node->next) {
-        //md_log_trace("lb=%zu, chr=%zu, unclippedCoordPos=%zu, orientation=%zu, mchr=%zu, mateUnclippedCoordPos=%zu, rindex=%zu, mindex=%zu\n", read->readLb, read->readChromosome, read->unclippedCoordPos, read->orientation, read->mateChromosome, read->coordMatePos, read->indexAfterSort, read->mateIndexAfterSort);
-        readEnds_size++;
-    }
-    
-   fprintf(stderr, " TRACE 4 readEndsList size = %zu :::: fragList size =%zu \n", readEnds_size, fragList_size);
-   */ 
+    		index_in_offset = 0;
 
-    md_log_debug("Finished to sort list in %f seconds\n", MPI_Wtime() - timeStamp);
+    		for ( j = 0; j < readNum; j++) {
+        		//we search discordant reads
+        		if (!readArr[j] || !readArr[j]->d) continue;
+        		else if (readArr[j]->d == 1){
+            			disc_dup_offset_source_tmp[index_in_offset] =  readArr[j]->offset_source_sam;
+            			index_in_offset++;            
+        		}
+    		}
+    		*disc_dup_offset_source =  disc_dup_offset_source_tmp;
+    		*disc_dup_number = index_in_offset;
 
-    md_log_info("Start to find duplicate ...\n");
-    timeStamp = MPI_Wtime();
-    int localDuplicates = 0, localOpticalDuplicates = 0, totalDuplicates = 0, totalOpticalDuplicates = 0;
-    
-    findDuplicaDiscordant(fragList, readEndsList, htbl, &localDuplicates, &localOpticalDuplicates, comm) ;
-    
+     		/* free all reads and fragList */
+    		llist_destruct(fragList);
+    		/* free all nodes of readEndsList */
+    		llist_clear(readEndsList);
+    		/* free readEndsList */
+    		llist_destruct(readEndsList);
 
+    		for (j = 0; j < readNum; j++) if (readArr[j]) free(readArr[j]);
+    		free(readArr);
 
-    md_log_info("Finished to find duplicates in %f seconds\n", totalDuplicates, totalOpticalDuplicates,  MPI_Wtime() - timeStamp);
-    md_log_info("Gather duplicates results ...\n");
-    
-    timeStamp = MPI_Wtime();
-    
-    
-    MPI_Reduce(&localDuplicates, &totalDuplicates, 1, MPI_INT, MPI_SUM, 0, comm);
-    MPI_Reduce(&localOpticalDuplicates, &totalOpticalDuplicates, 1, MPI_INT, MPI_SUM, 0, comm);
-    md_log_info("Found %d duplicates and %d optical duplicates in %f seconds\n\n", totalDuplicates, totalOpticalDuplicates,  MPI_Wtime() - timeStamp);
-
-    timeStamp = MPI_Wtime();
-
-    char *newBuff = writeBuff(samTokenLines, readArr, readNum);
-    
-    free(samTokenLines);
-    free(intervalByProc);
-    free(readNumByProc);
-    
-    
-    //if (tmp_disc_dup_offset_source) free(tmp_disc_dup_offset_source);
-    if (disc_offsets_source)        free(disc_offsets_source);
-
-    freeChrInfo(&chr);
-    freeLbInfo(&lb);
-
-    hashTableDestroy(htbl);
-
-    //md_set_log_comm(previousComm);
-
-    MPI_Barrier(comm);
-    md_log_trace("Finished to free data structures %f seconds\n", MPI_Wtime() - timeStamp);
-    md_log_debug("Finished to mark buffer %f seconds\n", MPI_Wtime() - timeStamp);
-    /*
-        ///////////////////////////
-        //////////////////////////
-        Now we fill up the disc_offset source vector
-        //////////////////////////
-        //////////////////////////
-        //////////////////////////
-    */
-
-    disc_dup_number[0] = localDuplicates + localOpticalDuplicates;
-
-    //we return the total of duplicate for this rank
-   
-    // we loop the readArr
-    // we use data_offset_source to check 
-    // the discordant reads
-    size_t j;
-    size_t index_in_offset = 0;
-
-     for ( j = 0; j < readNum; j++) {
-        //we search discordant reads
-        if (!readArr[j] || !readArr[j]->d) continue;
-        else if (readArr[j]->d == 1){
-            index_in_offset++;            
-        }
-    }
-
-    size_t *disc_dup_offset_source_tmp = calloc( index_in_offset,  sizeof(size_t));
-    
-    index_in_offset = 0;
-
-    for ( j = 0; j < readNum; j++) {
-        //we search discordant reads
-        if (!readArr[j] || !readArr[j]->d) continue;
-        else if (readArr[j]->d == 1){
-            disc_dup_offset_source_tmp[index_in_offset] =  readArr[j]->offset_source_sam;
-            index_in_offset++;            
-        }
-    }
-    *disc_dup_offset_source =  disc_dup_offset_source_tmp;
-    *disc_dup_number = index_in_offset;
-
-     /* free all reads and fragList */
-    llist_destruct(fragList);
-    /* free all nodes of readEndsList */
-    llist_clear(readEndsList);
-    /* free readEndsList */
-    llist_destruct(readEndsList);
-
-    //for (size_t m = 0; m < readNum; m++)
-    //    free(readArr[m]);
-    free(readArr);
-
-    //*disc_dup_offset_source = NULL;
-    md_log_debug("Total time spend in mark duplicates %f seconds\n", MPI_Wtime() - timeStart);
+    		//*disc_dup_offset_source = NULL;
+    		md_log_debug("Total time spend in mark duplicates %f seconds\n", MPI_Wtime() - timeStart);
           
-    MPI_Barrier(comm);
+    		MPI_Barrier(comm);
+		//MPI_Comm_free(&comm);
+		//md_set_log_comm(comm1);
+	}
+	MPI_Comm_free(&comm);
+        md_set_log_comm( previousComm);
 
-    return newBuff;
+    	return newBuff;
 }
 

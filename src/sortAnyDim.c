@@ -785,9 +785,10 @@ void parallel_sort_any_dim(
 		size_t start_offset_in_file,
 		size_t headerSize,
 		char* header,
+		CHTbl *htblref,
+		CHTbl *htblrg,
 		char *chrNames,
-		size_t *disc_dup_offset_source,
-		size_t *disc_dup_number){
+		skip_list *list){
 
 	size_t k, j;
 	int j2;
@@ -1452,6 +1453,8 @@ void parallel_sort_any_dim(
 			split_rank,
 			output_dir,
 			header,
+			htblref,
+			htblrg,
 			local_readNum,
 			total_reads_by_chr,
 			chrNames,
@@ -1467,7 +1470,6 @@ void parallel_sort_any_dim(
 			local_rank_sorted,
 			local_data,
 			start_offset_in_file,
-			disc_dup_offset_source,
-    		disc_dup_number
+			list
 			);
 }

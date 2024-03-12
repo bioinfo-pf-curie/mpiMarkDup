@@ -57,9 +57,12 @@ void parallel_sort_any_dim(						//dimensions for parabitonic
 		size_t start_offset_in_file,
 		size_t headerSize,
 		char* header,
+		CHTbl *htblref,
+		CHTbl *htblrg,
 		char *chrName,
 		size_t *disc_dup_offset_source,
-		size_t *disc_dup_number
+		size_t *disc_dup_number,
+		skip_list *list
 		);
 
 
