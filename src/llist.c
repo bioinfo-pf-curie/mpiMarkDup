@@ -1,16 +1,15 @@
 /*
-   mpiSORT
-   Copyright (C) 2016-2019 Institut Curie / Institut Pasteur
-   mpiSORT is free software; you can redistribute it and/or
-   modify it under the terms of the GNU Lesser General Public
-   License as published by the Free Software Foundation; either
-   version 2.1 of the License, or (at your option) any later version.
-   mpiSORT is distributed in the hope that it will be useful,
-   but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-   Lesser General Public License for more details.
-   You should have received a copy of the GNU Lesser Public License
-   along with mpiSORT.  If not, see <http://www.gnu.org/licenses/>.
+   This file is part of mpiMarkDup
+   
+   Copyright Institut Curie 2020
+   
+   This software is a computer program whose purpose is to sort SAM file and mark duplicates.
+   
+   You can use, modify and/ or redistribute the software under the terms of license (see the LICENSE file for more details).
+   
+   The software is distributed in the hope that it will be useful, but "AS IS" WITHOUT ANY WARRANTY OF ANY KIND. Users are therefore encouraged to test the software's suitability as regards their requirements in conditions enabling the security of their systems and/or data. 
+   
+   The fact that you are presently reading this means that you have had knowledge of the license and that you accept its terms.
 */
 
 /*
@@ -170,11 +169,9 @@ void llist_clear(llist_t *l) {
     lnode_t *x = l->nil->next;
 
     while (x != l->nil) {
-        //assert(x != x->next);
         lnode_t *tmp = x;
-        //printf("free %s\n", x->read->Qname);
         x = x->next;
-        free(tmp);
+        if (tmp) free(tmp);
     }
 
     l->head = l->nil;
@@ -193,14 +190,7 @@ void llist_clear(llist_t *l) {
 void llist_destruct(llist_t *l) {
     lnode_t *x = l->head;
 
-    while (x != l->nil) {
-        lnode_t *tmp = x;
-        x = x->next;
-        freeRead(tmp->read);
-        tmp->read = NULL;
-        free(tmp);
-    }
-
+    while (x != l->nil) x = x->next;
     free(l->nil);
     free(l);
 }

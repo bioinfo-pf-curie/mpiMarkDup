@@ -1,16 +1,15 @@
 /*
-   mpiSORT
-   Copyright (C) 2016-2019 Institut Curie / Institut Pasteur
-   mpiSORT is free software; you can redistribute it and/or
-   modify it under the terms of the GNU Lesser General Public
-   License as published by the Free Software Foundation; either
-   version 2.1 of the License, or (at your option) any later version.
-   mpiSORT is distributed in the hope that it will be useful,
-   but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-   Lesser General Public License for more details.
-   You should have received a copy of the GNU Lesser Public License
-   along with mpiSORT.  If not, see <http://www.gnu.org/licenses/>.
+   This file is part of mpiMarkDup
+   
+   Copyright Institut Curie 2020
+   
+   This software is a computer program whose purpose is to sort SAM file and mark duplicates.
+   
+   You can use, modify and/ or redistribute the software under the terms of license (see the LICENSE file for more details).
+   
+   The software is distributed in the hope that it will be useful, but "AS IS" WITHOUT ANY WARRANTY OF ANY KIND. Users are therefore encouraged to test the software's suitability as regards their requirements in conditions enabling the security of their systems and/or data. 
+   
+   The fact that you are presently reading this means that you have had knowledge of the license and that you accept its terms.
 */
 
 /*
@@ -46,8 +45,8 @@ int freeRead(readInfo* read) {
         free(read->cigar);
         read->cigar = NULL;
     }
-
-    free(read);
+    
+    //free(read);
     return 0;
 }
 
@@ -135,8 +134,8 @@ void createMateType(MPI_Datatype *mate_type) {
  * @return a read cloned
  */
 
-readInfo *cloneRead(readInfo *read) {
-    readInfo *clonedRead = calloc(1, sizeof(readInfo));
+void cloneRead(readInfo *read, readInfo *clonedRead) {
+    //readInfo *clonedRead = calloc(1, sizeof(readInfo));
     clonedRead->fingerprint = read->fingerprint;
     clonedRead->Qname   = strdup(read->Qname);
     clonedRead->cigar   = strdup(read->cigar);
@@ -161,7 +160,7 @@ readInfo *cloneRead(readInfo *read) {
     clonedRead->orientation = read->orientation;
     clonedRead->pair_num = read->pair_num;
 
-    return clonedRead;
+    //return clonedRead;
 }
 
 /**
@@ -182,6 +181,43 @@ unsigned int getOrientation (readInfo *read, const int isPaired) {
         return readReverseStrand ? 1 : 0;
     } else {
         unsigned int mateReverseStrand = readBits((unsigned int)read->valueFlag, 5);
+
+        int read1NegativeStrand = readReverseStrand;;
+        int read2NegativeStrand = mateReverseStrand;;
+
+        if (read1NegativeStrand) {
+            if (read2NegativeStrand) {
+                //return RR;
+                return 4;
+
+            } else {
+                //return RF;
+                return 5;
+            }
+
+        } else {
+            if (read2NegativeStrand) {
+                //return FR;
+                return 3;
+
+            } else {
+                //return FF;
+                return 2;
+            }
+        }
+    }
+}
+
+
+unsigned int getOrientation_v2 (const int isPaired, unsigned int read_flag, unsigned int mate_flag) {
+
+    unsigned int readReverseStrand = read_flag;
+
+    if (!isPaired) {
+        //return readReverseStrand ? R : F;
+        return readReverseStrand ? 1 : 0;
+    } else {
+        unsigned int mateReverseStrand = mate_flag;
 
         int read1NegativeStrand = readReverseStrand;;
         int read2NegativeStrand = mateReverseStrand;;

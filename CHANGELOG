@@ -1,0 +1,92 @@
+version-1.0
+    - mpiMarkDup: sorts SAM files and mark duplicates
+
+----------------------------------------------------------------------
+Preliminary releases
+
+Release from the 25/10/2019 
+
+1) Not a good idea to play with magic number bgzip complains. We came back to previous version
+
+2) TODO: now the major bottleneck is the computation of the collision in perfect hash table.
+		 we shall compute collision only one time according to the biggest chromosome to mark.
+
+3) TODO: problem with the option -q > 0 (it works with -q 0)
+
+Release from the 23/10/2019
+
+1) Add the magic number at end of BGZF file. This way samtools doesn't complain.
+
+example of usage with samtools
+- samtools flagstat chr1.gz
+- samtools view -f 1024 chr1.gz
+
+Other tools shall complain (not tested).
+
+Release from the 21/10/2019 
+
+1) Review of the search of mates after the bruck exchange of inter-process reads.
+     We now use the hash table to look for the corresponding pair of a read.
+
+
+Release from the 02/07/2019 
+
+1) Fix a bug when pairs overlap 2 ranks
+
+2) Fix a memory leak
+
+Release from the 01/07/2019
+
+1) Fix memory leaks
+
+2) Remove global variable COMM_WORLD
+
+Release from the 27/06/2019
+
+1) Fix a corner case. We check intra-node overlap before extra-node overlap in mpiSort.c.
+
+2) Fix a bug in sortAnyDim.c
+
+Release from the 19/06/2019
+
+1) Fix a corner case
+
+Release from the 13/06/2019
+
+1) Replace All2all with a Bruck when exchange external frags
+
+2) Change some types in readInfo and mateInfo structures
+
+Release from the 23/05/2019
+
+1) Fix issues with openssl 1.0.2k-fips.
+
+Release from the 15/05/2019
+
+1) Cleaning up the code.
+
+Release from the 07/05/2019
+
+1) Fix reproducibility issue with 1 cpu.
+
+Release from the 06/05/2019
+
+1) Fix tie case (tested only with power of 2 cpu).
+
+Release from the 08/04/2019
+
+1) fix reproducibility issue but still have a corner case.
+
+Release from the 31/03/2019
+
+1) fix corner case when read distribution is unbalanced.
+
+Release from the 28/03/2019
+
+1) fix some integer conversion and prototype.
+2) fix a corner case when a rank recieve no mate from other rank.
+
+Release from the 22/03/2019
+
+1) fix the coordinates overlapped between 2 ranks in case we are not power of 2 dimension (again it's better if you are in power of 2 dimension)
+

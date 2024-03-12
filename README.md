@@ -1,15 +1,23 @@
 # mpiMarkDup
 
-MPI and C based program of marking duplicates for Next Generation Sequencing technology.<br /> 
+This software allows the sorting and the marking of duplicates reads for high-throughput sequencing data after alignment from [SAM files](https://samtools.github.io/hts-specs/). `mpiMarkDup` relies on the [Message Passing Interface (MPI)](https://en.wikipedia.org/wiki/Message_Passing_Interface) standard to perform the parallelisation of the sorting processing over multiple cores and nodes of high performance computing clusters.
 
-The code is a fork from the mpiSORT project. We add a process to manage the marking of duplicate reads.
+* [Installation](docs/INSTALL.md)
+* [Documentation](docs/README.md)
+* [Credits](#credits)
+* [Acknowledgements](#acknowledgements)
+* [Release notes](CHANGELOG.md)
+* [Citation](#citation)
 
-The goal is to create a distributed and (near) real time version of the well known Picard MarkDuplicate from the Broad Institute. To do that we rely on low level  technologies and parallel algorithms.<br />
+## Credits
 
-The project is still under development so feel free to test it and report.
+This program has been developed by Frederic Jarlier from Institut Curie and with the help of students from Paris Descartes University and supervised by Philippe Hupé from Institut Curie.
 
-This is an open project initiated by Institut Curie HPC team and students from Paris Descartes University.
+Contacts: [frederic.jarlier@curie.fr](mailto:frederic.jarlier@curie.fr]), [philippe.hupe@curie.fr](mailto:frederic.jarlier@curie.fr])
 
+<<<<<<< HEAD
+## Acknowledgements
+=======
 Release notes 
 -------------
 
@@ -234,4 +242,6 @@ Contacts: <br />
 
 frederic.jarlier@curie.fr <br />
 philippe.hupe@curie.fr <br />
+>>>>>>> master
 
+## Citation

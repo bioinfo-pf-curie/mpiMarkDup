@@ -1,18 +1,17 @@
 #!/bin/sh
 
 
-#   mpiSORT
-#   Copyright (C) 2016-2019 Institut Curie / Institut Pasteur
-#   mpiSORT is free software; you can redistribute it and/or
-#   modify it under the terms of the GNU Lesser General Public
-#   License as published by the Free Software Foundation; either
-#   version 2.1 of the License, or (at your option) any later version.
-#   mpiSORT is distributed in the hope that it will be useful,
-#   but WITHOUT ANY WARRANTY; without even the implied warranty of
-#   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-#   Lesser General Public License for more details.
-#   You should have received a copy of the GNU Lesser Public License
-#   along with mpiSORT.  If not, see <http://www.gnu.org/licenses/>.
+#    This file is part of mpiMarkDup
+#    
+#    Copyright Institut Curie 2020
+#    
+#    This software is a computer program whose purpose is to sort SAM file and mark duplicates.
+#    
+#    You can use, modify and/ or redistribute the software under the terms of license (see the LICENSE file for more details).
+#    
+#    The software is distributed in the hope that it will be useful, but "AS IS" WITHOUT ANY WARRANTY OF ANY KIND. Users are therefore encouraged to test the software's suitability as regards their requirements in conditions enabling the security of their systems and/or data. 
+#    
+#    The fact that you are presently reading this means that you have had knowledge of the license and that you accept its terms.
 
 #    Authors:
 #    Frederic Jarlier,   Institut Curie
@@ -20,7 +19,7 @@
 
 # Last modification : 2018 Apr. 22
 #
-# Given a sam file, compare output of MarkDuplicates and mpiMD
+# Given a sam file, compare output of MarkDuplicates and mpiMarkDup
 #
 #
 # SYNOPSIS 
@@ -32,10 +31,10 @@
 # Results Directory Hierarchy :
 #
 #   ./{filename}
-#   |__ MD
+#   |__ MarkDuplicates
 #   |   |__ {filename}.md.sam
 #   |
-#   |__ mpiMD
+#   |__ mpiMarkDup
 #   |   |__ {chr1}.gz
 #   |   ...    ...
 #   |   |__ {chrn}.gz
@@ -57,7 +56,7 @@
 PICARDTOOLS=./picard.jar
 
 # mpiMD parameters
-MPI_MD=../src/mpiMD
+MPI_MARKDUP=../src/mpiMarkDup
 NUM_PROCS=1
 VERBOSITY=3
 
@@ -79,8 +78,8 @@ extension="${filename##*.}"
 filename="${filename%.*}"
 
 OUTDIR=$filename
-mpiMD_OUT=$OUTDIR/mpiMD
-MD_OUT=$OUTDIR/MD
+mpiMD_OUT=$OUTDIR/mpiMarkDup
+MD_OUT=$OUTDIR/MarkDuplicates
 JV_OUT=$OUTDIR/results
 
 mkdir -p $OUTDIR
@@ -169,7 +168,7 @@ done
 ####### mpiMD Part #######
 ##########################
 
-mpirun --oversubscribe -N $NUM_PROCS $MPI_MD $INPUT $mpiMD_OUT -v $VERBOSITY
+mpirun --oversubscribe -N $NUM_PROCS $MPI_MARKDUP $INPUT $mpiMD_OUT -v $VERBOSITY
 
 if [ $? -ne 0 ]; then
     echo "mpiMD failed."

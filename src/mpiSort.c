@@ -1,20 +1,15 @@
 /*
-   mpiSORT
-   Copyright (C) 2016-2017 Institut Curie / Institut Pasteur
-   Copyright (C) 2018-2019 Institut Curie
-
-   mpiSORT is free software; you can redistribute it and/or
-   modify it under the terms of the GNU Lesser General Public
-   License as published by the Free Software Foundation; either
-   version 2.1 of the License, or (at your option) any later version.
-
-   mpiSORT is distributed in the hope that it will be useful,
-   but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-   Lesser General Public License for more details.
-
-   You should have received a copy of the GNU Lesser Public License
-   along with mpiSORT.  If not, see <http://www.gnu.org/licenses/>.
+   This file is part of mpiMarkDup
+   
+   Copyright Institut Curie 2020
+   
+   This software is a computer program whose purpose is to sort SAM file and mark duplicates.
+   
+   You can use, modify and/ or redistribute the software under the terms of license (see the LICENSE file for more details).
+   
+   The software is distributed in the hope that it will be useful, but "AS IS" WITHOUT ANY WARRANTY OF ANY KIND. Users are therefore encouraged to test the software's suitability as regards their requirements in conditions enabling the security of their systems and/or data. 
+   
+   The fact that you are presently reading this means that you have had knowledge of the license and that you accept its terms.
 */
 
 /*
@@ -58,13 +53,12 @@
 #include "parser.h"
 #include "preWrite.h"
 #include "write.h"
-#include "sort_any_dim.h"
-#include "mpiSort_utils.h"
-#include "write_utils.h"
+#include "sortAnyDim.h"
+#include "mpiSortUtils.h"
+#include "writeUtils.h"
 #include "qksort.h"
-#include "parabitonicsort2.h"
-#include "parabitonicsort3.h"
-
+#include "parallelBitonicSort2.h"
+#include "parallelBitonicSort3.h"
 #include "log.h"
 
 
@@ -113,7 +107,7 @@
 #define DEFAULT_INBUF_SIZE  (1024*1024*1024)
 
 /* Maximum chromosome number */
-#define MAXNBCHR 256
+#define MAXNBCHR 512
 
 static void usage(const char *);
 
@@ -121,15 +115,15 @@ int opticalDistance;
 
 int main (int argc, char *argv[]) {
 
-    char *x, *y, *z, *xbuf, *hbuf, *chrNames[MAXNBCHR];
+    char *x, *y, *z, *xbuf, *hbuf, *chrNames[MAXNBCHR], *rgNames[MAXNBCHR];
     off_t hsiz;
     struct stat st;
 
     MPI_File mpi_filed;
-    MPI_File mpi_file_split_comm;
+    //MPI_File mpi_file_split_comm;
     MPI_Offset fileSize, unmapped_start;
     int num_proc, rank, fd;
-    int res, nbchr, i;
+    int res, nbchr, nbrg,i;
     int ierr, errorcode = MPI_ERR_OTHER;
     int g_rank, g_size;
     int split_rank, split_size; //after split communication we update the rank and the size
@@ -141,7 +135,25 @@ int main (int argc, char *argv[]) {
     unsigned char threshold;
     size_t input_file_size;
     size_t unmappedSize = 0;
+
+    skip_list sl;
+    Create(&sl);
+    
+
+    // variable for discordants
+    //size_t total_reads_discordant = 0;
+    
+    size_t *local_disc_duplicate_offset_source = malloc(1*sizeof(size_t));
+    //total_disc_duplicate_offset_source = malloc(1*sizeof(size_t *));  //will hold the offset in the unsorted sam of the discordants reads
+    
+    size_t *all_disc_duplicate_offset_source =  NULL; //malloc(sizeof(size_t)); 
+    
+    size_t *total_disc_duplicates = calloc(1, sizeof(size_t));      
+    //size_t *total_duplicate_number = calloc(1, sizeof(size_t));
+    size_t *local_disc_duplicate_number = calloc(1, sizeof(size_t));
+    
     size_t discordantSize = 0;
+
     size_t *readNumberByChr = NULL, *localReadNumberByChr = NULL;
     double time_count;
     double toc;
@@ -149,6 +161,12 @@ int main (int argc, char *argv[]) {
     MPI_Comm split_comm; //used to split communication when jobs have no reads to sort
     const char *sort_name;
     MPI_Info finfo;
+
+    //Hash table containing references
+    CHTbl ref_htbl;
+
+    //Hash table containing rg
+    CHTbl rg_htbl;
 
     /* Set default values */
     compression_level = 3;
@@ -223,10 +241,6 @@ int main (int argc, char *argv[]) {
             md_set_log_level(MD_LOG_INFO);
     }
 
-
-
-
-
     if (argc - optind != 2) {
         usage(basename(*argv));
         return 1;
@@ -284,43 +298,74 @@ int main (int argc, char *argv[]) {
     memset(chrNames, 0, sizeof(chrNames)); //all elements of chrNames is init 0
     x = xbuf;
     nbchr = 0;
-
     //about chrNames values
 
     while (*x == '@') { //Every line that starts with "@" is part of the header
         y = strchr(x, '\n');  //renvoie un pointeur sur la première occurrence du caractère c dans la chaîne s
         z = x; //z pointe sur x, qui est dans un premier temps la première ligne du fichier
         x = y + 1;
-
-        //On ne fait rien si dans la ligne on a pour les 3 premiers caractères :@SQ
-
-
-        if (strncmp(z, "@SQ", 3) != 0) {
-            continue;
-        }
-
+        if (strncmp(z, "@SQ", 3) != 0) continue;
         /* Save reference names */
         y = strstr(z, "SN:");  //finds the first occurence of SN: in the String z
         assert(y != NULL);
         z = y + 3; //adress's position y + 3
-
-        while (*z && !isspace((unsigned char)*z)) {//This function returns a non-zero value if c is a white-space character else, zero (false).
-            z++;
-        }
-
+        while (*z && !isspace((unsigned char)*z)) z++;
         chrNames[nbchr++] = strndup(y + 3, z - y - 3); //recover only (z-y-3) of (y + 3)
         assert(nbchr < MAXNBCHR - 2);
     }
 
-    chrNames[nbchr++] = strdup(UNMAPPED);
+    //init hash table for reference
+    if (chtbl_init(&ref_htbl, PRIME_TBLSIZ, hashpjw ) != 0)
+         return 1;
+
+    //populate hash table for reference
+    for(i = 0; i < (nbchr); i++){
+        //fprintf(stderr, "rank %d ::: call htable insert for %s \n", rank, chrNames[i]);
+        if (chtbl_insert(&ref_htbl, chrNames[i], i)  != 0)
+        return 1;
+    }
+
     chrNames[nbchr++] = strdup(DISCORDANT);
+    chrNames[nbchr++] = strdup(UNMAPPED);
 
     hsiz = x - xbuf;
     hbuf = strndup(xbuf, hsiz);
 
+
+    //now see barcode
+    memset(rgNames, 0, sizeof(rgNames)); //all elements of rgNames is init 0
+    x = xbuf;
+    nbrg = 0;
+    
+    while (*x == '@') { //Every line that starts with "@" is part of the header
+        y = strchr(x, '\n');  //renvoie un pointeur sur la première occurrence du caractère c dans la chaîne s
+        z = x; //z pointe sur x, qui est dans un premier temps la première ligne du fichier
+        x = y + 1;
+        if (strncmp(z, "@RG", 3) != 0) continue;
+        /* Save read group names */
+        y = strstr(z, "ID:");  //finds the first occurence of RG: in the String z
+        assert(y != NULL);
+        z = y + 3; //adress's position y + 3
+        while (*z && !isspace((unsigned char)*z)) z++;
+        rgNames[nbrg] = strndup(y + 3, z - y - 3); //recover only (z-y-3) of (y + 3)
+        assert(nbrg < MAXNBCHR - 2);
+    }
+
+    //init hash table for read group
+    if (chtbl_init(&rg_htbl, PRIME_TBLSIZ, hashpjw ) != 0)
+         return 1;
+
+    //populate hash table for read group
+    for(i = 0; i < (nbrg); i++){
+        //fprintf(stderr, "rank %d ::: call htable insert for %s \n", rank, chrNames[i]);
+        if (chtbl_insert(&rg_htbl, rgNames[i], i)  != 0)
+        return 1;
+    }
+
     if (rank == 0) {
         fprintf(stderr, "The size of the file is %zu bytes\n", (size_t)st.st_size);
         fprintf(stderr, "Header has %d+2 references\n", nbchr - 2);
+	fprintf(stderr, "Header has %d read group\n", nbrg);
     }
 
     int size_asp = asprintf(&header, "@HD\tVN:1.0\tSO:%s\n%s", sort_name, hbuf);
@@ -403,68 +448,58 @@ int main (int argc, char *argv[]) {
     char *local_data = (char *)malloc(((goff[rank + 1] - poffset) + 1) * sizeof(char));
     size_t size_tmp = goff[rank + 1] - poffset;
     local_data[goff[rank + 1] - poffset] = 0;
-    char *q = local_data;
+    char *local_data_p1 = local_data;
+    char *local_data_p2 = local_data;
+    char *local_data_p3 = local_data;
+    size_t offset_last_line = 0;
+    size_t extra_char=0;
+    size_t size_to_read = goff[rank+1]-poffset;
+    int return_parse = 0;
+    size_t local_offset = 0;
+    size_to_read = goff[rank+1]-poffset;
 
     //We read the file sam and parse
     while (poffset < goff[rank + 1]) {
 
-        size_t size_to_read = 0;
+        size_to_read = 0;
 
-        if ( (goff[rank + 1] - poffset) < DEFAULT_INBUF_SIZE ) {
-            size_to_read = goff[rank + 1] - poffset;
+	if( (goff[rank+1]-poffset) < DEFAULT_INBUF_SIZE ){
+                        size_to_read = goff[rank+1]-poffset;
+                }
+                else{
+                        size_to_read = DEFAULT_INBUF_SIZE;
+                }
 
-        } else {
-            size_to_read = DEFAULT_INBUF_SIZE;
-        }
+                if (!size_to_read) break;
+                MPI_File_read_at(mpi_filed, (MPI_Offset)poffset, local_data_p1, size_to_read, MPI_CHAR, MPI_STATUS_IGNORE);
+                //we look where is the last line read for updating next poffset
+                local_data_p2 = local_data_p1 + size_to_read - 1;
+                if ( size_to_read != DEFAULT_INBUF_SIZE)
+                        assert(*local_data_p2 == '\n');
 
-        // we load the buffer
-        //hold temporary size of SAM
-        //due to limitation in MPI_File_read_at
-        local_data_tmp = (char *)realloc(local_data_tmp, (size_to_read + 1) * sizeof(char));
-        local_data_tmp[size_to_read] = 0;
+                extra_char=0;
+                while((*local_data_p2 != '\n')){
+                        local_data_p2--;
+                        extra_char++;
+                }
+                offset_last_line = size_to_read - extra_char;
+                //Now we parse Read in local_data
+                parser_paired(local_data_p3, size_to_read - extra_char, rank, poffset, threshold, nbchr, &readNumberByChr, &reads, &ref_htbl);
+                assert(return_parse == 0);
 
-        // Original reading part is before 18/09/2015
-        MPI_File_read_at(mpi_filed, (MPI_Offset)poffset, local_data_tmp, size_to_read, MPI_CHAR, MPI_STATUS_IGNORE);
-        size_t local_offset = 0;
-        assert(strlen(local_data_tmp) == size_to_read);
+                //we go to the block
+                if ( extra_char != 0){
+                        poffset        += (offset_last_line+1);
+                        local_offset   += (offset_last_line+1);
+                }
+                else {
+                        poffset        += (offset_last_line);
+                        local_offset   += (offset_last_line);
+                }
 
-        //we look where is the last line read for updating next poffset
-        size_t offset_last_line = size_to_read - 1;
-
-        size_t extra_char = 0;
-
-        while (local_data_tmp[offset_last_line] != '\n') {
-            offset_last_line -- ;
-            extra_char++;
-        }
-
-        local_data_tmp[size_to_read - extra_char] = 0;
-        size_t local_data_tmp_sz = strlen(local_data_tmp);
-
-        //If it s the last line of file, we place a last '\n' for the function tokenizer
-        if (rank == num_proc - 1 && ((poffset + size_to_read) == goff[num_proc])) {
-            local_data_tmp[offset_last_line] = '\n';
-        }
-
-        //Now we parse Read in local_data
-
-        parser_paired(local_data_tmp, rank, poffset, threshold, nbchr, &readNumberByChr, chrNames, &reads);
-
-        //now we copy local_data_tmp in local_data
-        char *p = local_data_tmp;
-        size_t pos = 0;
-
-        while (*p && (pos < local_data_tmp_sz)) {
-            *q = *p;
-            p++;
-            q++;
-            pos++;
-        }
-
-        //we go to the next line
-        poffset += (offset_last_line + 1);
-        local_offset += (offset_last_line + 1);
-
+                local_data_p1   = local_data + local_offset;
+                local_data_p2   = local_data + local_offset;
+                local_data_p3   = local_data + local_offset;
     }
 
     assert(size_tmp == strlen(local_data));
@@ -512,234 +547,219 @@ int main (int argc, char *argv[]) {
 
     MPI_Barrier(MPI_COMM_WORLD);
 
-    for (i = 0; i < nbchr ; i++) {
+	for (i = nbchr -1 ; i >= 0 ; i--) {
 
-        if ( i == nbchr - 2){ 
-            //If unmapped, we compress these reads in one folder without sort
-            MPI_File mpi_file_split_comm2;
-            double time_count;
+        	if ( i == nbchr - 1){ 
+            		//If unmapped, we compress these reads in one folder without sort
+            		//MPI_File mpi_file_split_comm2;
+            		double time_count;
 
-            size_t total_reads = 0;
-            MPI_Allreduce(&readNumberByChr[i], &total_reads, 1, MPI_LONG_LONG_INT, MPI_SUM, MPI_COMM_WORLD);//Sum of all the reads per chromosomes
+            		size_t total_reads = 0;
+            		MPI_Allreduce(&readNumberByChr[i], &total_reads, 1, MPI_LONG_LONG_INT, MPI_SUM, MPI_COMM_WORLD);//Sum of all the reads per chromosomes
 
-            //if ((rank == 0){
-            //    fprintf(stderr, "rank %d :::: total read to sort for unmapped = %zu \n", rank, total_reads);
-            //}
-            
-            md_log_rank_debug(0, "total read to sort for unmapped = %zu\n\n", total_reads);
+            		md_log_rank_debug(0, "total read for unmapped = %zu\n", total_reads);
 
-            MPI_Barrier(MPI_COMM_WORLD);
+            		if (total_reads == 0) {
 
-            if (total_reads == 0) {
-                // nothing to sort for unmapped
-                // maybe write an empty bam file
-            } else {
-                int i1, i2;
-                size_t *localReadsNum_rank0 = (size_t *)malloc(num_proc * sizeof(size_t));
-                localReadsNum_rank0[0] = 0;
-                int file_pointer_to_free = 0;
-                int split_comm_to_free = 0;
-                //we build a vector with rank job
-                int val_tmp1 = 0;
-                int val_tmp2 = 0;
-                int chosen_rank = 0;
-                // the color tells in what communicator the rank pertain
-                // color = 0 will be the new communicator color
-                // otherwise the color is 1
-                int *color_vec_to_send =  (int *)malloc(num_proc * sizeof(int));
-                // the key value tell the order in the new communicator
-                int *key_vec_to_send =  (int *)malloc(num_proc * sizeof(int));
+                		// nothing to sort for unmapped
+                		// maybe write an empty bam file
+				continue;
+            		} else {
+                		int i1, i2;
+                		size_t *localReadsNum_rank0 = (size_t *)malloc(num_proc * sizeof(size_t));
+                		localReadsNum_rank0[0] = 0;
+                		//int file_pointer_to_free = 0;
+                		int split_comm_to_free = 0;
+                		//we build a vector with rank job
+                		int val_tmp1 = 0;
+                		int val_tmp2 = 0;
+                		int chosen_rank = 0;
+                		// the color tells in what communicator the rank pertain
+                		// color = 0 will be the new communicator color
+                		// otherwise the color is 1
+                		int *color_vec_to_send =  (int *)malloc(num_proc * sizeof(int));
+                		// the key value tell the order in the new communicator
+                		int *key_vec_to_send =  (int *)malloc(num_proc * sizeof(int));
 
-                //rank 0 gather the vector
-                MPI_Allgather(&readNumberByChr[i], 1, MPI_LONG_LONG_INT, localReadsNum_rank0, 1, MPI_LONG_LONG_INT, MPI_COMM_WORLD);//Now each rank knows the read number by chr of other ranks
-                MPI_Barrier(MPI_COMM_WORLD);
+                		//rank 0 gather the vector
+                		MPI_Allgather(&readNumberByChr[i], 1, MPI_LONG_LONG_INT, localReadsNum_rank0, 1, MPI_LONG_LONG_INT, MPI_COMM_WORLD);
 
-                if (rank == 0) {
-                    //we must chose the first rank with reads to sort
-                    i1 = 0;
+                		if (rank == 0) {
+                    			//we must chose the first rank with reads to sort
+                    			i1 = 0;
 
-                    while (localReadsNum_rank0[i1] == 0) {
-                        chosen_rank++;
-                        i1++;
-                    }
-                }
+                    			while (localReadsNum_rank0[i1] == 0) {
+                        			chosen_rank++;
+                        			i1++;
+                    			}
+                		}
+		 		//md_log_all_debug( "call writeSam_unmapped 0\n");
+                		//we broadcast the chosen rank
+                		//task: replace the broadcast with a sendrecieve
+                		MPI_Bcast( &chosen_rank, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
-                //we broadcast the chosen rank
-                //task: replace the broadcast with a sendrecieve
-                MPI_Bcast( &chosen_rank, 1, MPI_INT, 0, MPI_COMM_WORLD);
-                MPI_Barrier(MPI_COMM_WORLD);
+                		//we must chose which rank is going to split the communication
+                		if (((rank == chosen_rank) || rank == 0) && (chosen_rank != 0)) {
+                    			//the rank 0 will recieve the key_vec_to_send and colorvec_to_send
+                    			//first we exchange the size o
+                    			if (rank == chosen_rank) {
+                        			header = (char *)malloc((headerSize + 1) * sizeof(char));
+                        			MPI_Recv(header, headerSize + 1, MPI_CHAR, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                    			}
 
-                //we must chose which rank is going to split the communication
-                if (((rank == chosen_rank) || rank == 0) && (chosen_rank != 0)) {
-                    //the rank 0 will recieve the key_vec_to_send and colorvec_to_send
-                    //first we exchange the size o
-                    if (rank == chosen_rank) {
-                        header = (char *)malloc((headerSize + 1) * sizeof(char));
-                        MPI_Recv(header, headerSize + 1, MPI_CHAR, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-                    }
+                    			if (rank == 0) 	MPI_Send(header, headerSize + 1, MPI_CHAR, chosen_rank,  0, MPI_COMM_WORLD);
+                    		} else {
+                    			//we do nothing here
+                		}
 
-                    if (rank == 0) {
-                        MPI_Send(header, headerSize + 1, MPI_CHAR, chosen_rank,  0, MPI_COMM_WORLD);
-                    }
+                		if (rank == chosen_rank) {
 
-                } else {
-                    //we do nothing here
-                }
+                    			int counter = 0;
+                    			//we compute the number of 0 in the localReadsNum_vec
+                    			for (i1 = 0; i1 < num_proc; i1++) 
+                        			if (localReadsNum_rank0[i1] == 0) counter++;
+                        		
 
-                if (rank == chosen_rank) {
+                    			// if no jobs without reads we do nothing
+                   			if ( counter == 0 ) {
+                        			// nothing to do we associate split_comm with
+                        			split_comm = MPI_COMM_WORLD;
 
-                    int counter = 0;
+                        			for (i2 = 0; i2 < num_proc; i2++) {
+	                            			if (localReadsNum_rank0[i2] == 0) {
+        	                        			color_vec_to_send[i2] = 1;
+                	                			key_vec_to_send[i2] = val_tmp2;
+                        	        			val_tmp2++;
 
-                    //we compute the number of 0 in the localReadsNum_vec
-                    for (i1 = 0; i1 < num_proc; i1++) {
-                        if (localReadsNum_rank0[i1] == 0) {
-                            counter++;
-                        }
-                    }
+                            				} else {
+                                				color_vec_to_send[i2] = 0;
+                                				key_vec_to_send[i2] = val_tmp1;
+                                				val_tmp1++;
+                            				}
+                        			}
 
-                    // if no jobs without reads we do nothing
-                    if ( counter == 0 ) {
-                        // nothing to do we associate split_comm with
-                        split_comm = MPI_COMM_WORLD;
+                    			} else {
+                        			// now we compute the color according to
+                        			// the number of reads to sort
+                        			for (i2 = 0; i2 < num_proc; i2++) {
+                            				if (localReadsNum_rank0[i2] == 0) {
+                                				color_vec_to_send[i2] = 1;
+                                				key_vec_to_send[i2] = val_tmp2;
+                                				val_tmp2++;
 
-                        for (i2 = 0; i2 < num_proc; i2++) {
+                            				} else {
+                                				color_vec_to_send[i2] = 0;
+                                				key_vec_to_send[i2] = val_tmp1;
+                                				val_tmp1++;
+                            				}
+                        			} // end for loop
+                    			}// end if
+                		}// end if (rank == chosen_rank)
 
-                            if (localReadsNum_rank0[i2] == 0) {
-                                color_vec_to_send[i2] = 1;
-                                key_vec_to_send[i2] = val_tmp2;
-                                val_tmp2++;
+                		// we scatter the key and color vector
+                		// we create key and color variable for each job
+                		int local_color = 0;
+                		int local_key = 0;
+                		// we scatter the color and key
+                		MPI_Scatter( color_vec_to_send, 1, MPI_INT, &local_color, 1, MPI_INT, chosen_rank, MPI_COMM_WORLD);
+                		MPI_Scatter( key_vec_to_send, 1, MPI_INT, &local_key, 1, MPI_INT, chosen_rank, MPI_COMM_WORLD);
 
-                            } else {
-                                color_vec_to_send[i2] = 0;
-                                key_vec_to_send[i2] = val_tmp1;
-                                val_tmp1++;
-                            }
-                        }
+                		free(color_vec_to_send);
+                		free(key_vec_to_send);
+                		// we create a communicator
+                		// we group all communicator
+                		// with color of zero
+                		if (local_color == 0){ 
+                   			MPI_Comm_split( MPI_COMM_WORLD, local_color, local_key, &split_comm);
+                    			//ierr = MPI_File_open(split_comm, file_name,  MPI_MODE_RDONLY, finfo, &mpi_file_split_comm2);
 
-                    } else {
-                        // now we compute the color according to
-                        // the number of reads to sort
-                        for (i2 = 0; i2 < num_proc; i2++) {
-                            if (localReadsNum_rank0[i2] == 0) {
-                                color_vec_to_send[i2] = 1;
-                                key_vec_to_send[i2] = val_tmp2;
-                                val_tmp2++;
+		    			//we ask to liberate file pointer
+                    			//file_pointer_to_free = 1;
+                    			//we ask to liberate the split_comm
+                    			split_comm_to_free = 1;
+				}
+                		else 	MPI_Comm_split( MPI_COMM_WORLD, MPI_UNDEFINED, local_key, &split_comm);
+                    		
+                	
 
-                            } else {
-                                color_vec_to_send[i2] = 0;
-                                key_vec_to_send[i2] = val_tmp1;
-                                val_tmp1++;
-                            }
-                        } // end for loop
-                    }// end if
-                }// end if (rank == chosen_rank)
+                		//now we change the rank in the reads structure
+                		if (local_color == 0) {
+                    			MPI_Comm_rank(split_comm, &split_rank);
+                    			MPI_Comm_size(split_comm, &split_size);
 
-                MPI_Barrier(MPI_COMM_WORLD);
-                // we scatter the key and color vector
-                // we create key and color variable for each job
-                int local_color = 0;
-                int local_key = 0;
-                // we scatter the color and key
-                MPI_Scatter( color_vec_to_send, 1, MPI_INT, &local_color, 1, MPI_INT, chosen_rank, MPI_COMM_WORLD);
-                MPI_Scatter( key_vec_to_send, 1, MPI_INT, &local_key, 1, MPI_INT, chosen_rank, MPI_COMM_WORLD);
+                    			g_rank = split_rank;
+                    			g_size = split_size;
 
-                free(color_vec_to_send);
-                free(key_vec_to_send);
-
-                // we create a communicator
-                // we group all communicator
-                // with color of zero
-                if (local_color == 0) {
-
-                    MPI_Comm_split( MPI_COMM_WORLD, local_color, local_key, &split_comm);
-                    ierr = MPI_File_open(split_comm, file_name,  MPI_MODE_RDONLY, finfo, &mpi_file_split_comm2);
-                    //we ask to liberate file pointer
-                    file_pointer_to_free = 1;
-                    //we ask to liberate the split_comm
-                    split_comm_to_free = 1;
-
-                } else {
-                    MPI_Comm_split( MPI_COMM_WORLD, MPI_UNDEFINED, local_key, &split_comm);
-                    mpi_file_split_comm2 = mpi_filed;
-                }
-
-                //now we change the rank in the reads structure
-                if (local_color == 0) {
-                    MPI_Comm_rank(split_comm, &split_rank);
-                    MPI_Comm_size(split_comm, &split_size);
-
-                    g_rank = split_rank;
-                    g_size = split_size;
-
-                    reads[i] = reads[i]->next;
-                    localReadNumberByChr[i] = readNumberByChr[i];
+                    			reads[i] = reads[i]->next;
+                    			localReadNumberByChr[i] = readNumberByChr[i];
                     
-                    unmapped_start = startOffset(g_rank,
+                    			unmapped_start = startOffset(g_rank,
                                                 g_size,
                                                 unmappedSize,
                                                 headerSize,
                                                 split_comm
                                                 );
 
-                    if (!unmapped_start) {
-                        fprintf(stderr, "No header was defined for unmapped. \n Shutting down.\n");
-                        MPI_Finalize();
-                        return 0;
-                    }
 
-                    time_count = MPI_Wtime();
-                    MPI_Barrier(MPI_COMM_WORLD);
+                    			if (!unmapped_start) {
+                        			fprintf(stderr, "No header was defined for unmapped. \n Shutting down.\n");
+                        			MPI_Finalize();
+                        			return 0;
+                    			}
 
-                    writeSam_discordant_and_unmapped(
-                        split_rank,
-                        output_dir,
-                        header,
-                        localReadNumberByChr[i],
-                        chrNames[i],
-                        reads[i],
-                        split_size,
-                        split_comm,
-                        finfo,
-                        compression_level,
-                        local_data,
-                        goff[rank]);
+                    			time_count = MPI_Wtime();
+                    			MPI_Barrier(MPI_COMM_WORLD);
+					//fprintf(stderr, " rank %d ::: writeSam_unmapped \n", split_rank);
+                    			writeSam_unmapped(
+                        			split_rank,
+                        			output_dir,
+                        			header,
+                        			localReadNumberByChr[i],
+                        			chrNames[i],
+                        			reads[i],
+                        			split_size,
+                        			split_comm,
+                        			finfo,
+                        			compression_level,
+                        			local_data,
+                        			goff[rank]);
 
-                        //if (split_rank == chosen_rank) {
-                        //    fprintf(stderr, "rank %d :::::[MPISORT] Time to write chromosom %s ,  %f seconds \n\n\n", split_rank, chrNames[nbchr - s], MPI_Wtime() - time_count);
-                        //}
-                    md_log_rank_debug(chosen_rank, "[MPISORT] Time to write chromosom %s ,  %f seconds \n\n\n", chrNames[nbchr - i], MPI_Wtime() - time_count);
+                    				md_log_rank_debug(chosen_rank, "[MPISORT] Time to write chromosom %s ,  %f seconds \n\n\n", chrNames[nbchr - 2], MPI_Wtime() - time_count);
 
                     
-                    while (reads[i]->next != NULL) {
-                        Read *tmp_chr = reads[i];
-                        reads[i] = reads[i]->next;
-                        free(tmp_chr);
-                    }
+                    			while (reads[i]->next != NULL) {
+                        			Read *tmp_chr = reads[i];
+                        			reads[i] = reads[i]->next;
+                        			free(tmp_chr);
+                    			}
 
-                    free(localReadsNum_rank0);
+                    			free(localReadsNum_rank0);
 
-                } else {
-                    // we do nothing
-                }
+                		} else {
+                    			// we do nothing
+                		}
 
-                //we put a barrier before freeing pointers
-                MPI_Barrier(MPI_COMM_WORLD);
-                //we free the file pointer
+                		//we put a barrier before freeing pointers
+                		MPI_Barrier(MPI_COMM_WORLD);
+                		//we free the file pointer
+				/*
+                		if  (file_pointer_to_free) {
+                    		MPI_File_close(&mpi_file_split_comm2);
+                		}
+				*/
+                		//we free the split_comm
+                		if (split_comm_to_free) {
+                    			MPI_Comm_free(&split_comm);
+                		}
 
-                if  (file_pointer_to_free) {
-                    MPI_File_close(&mpi_file_split_comm2);
-                }
+                		split_comm_to_free = 0;
+                		//file_pointer_to_free = 0;
+	      		}
+            		md_log_rank_debug(0, "Finish for unmapped \n\n");
+        		continue; //got to next chr
 
-                //we free the split_comm
-                if (split_comm_to_free) {
-                    MPI_Comm_free(&split_comm);
-                }
+		} //end if (i == nbchr - 2) 
 
-                split_comm_to_free = 0;
-                file_pointer_to_free = 0;
-
-            }
-        }
         md_log_rank_info(0, "start to handle chromosome %s ...\n", chrNames[i]);
 
         /*
@@ -761,7 +781,7 @@ int main (int argc, char *argv[]) {
         int i1, i2;
         size_t localReadsNum_rank0[num_proc];
         localReadsNum_rank0[0] = 0;
-        int file_pointer_to_free = 0;
+        //int file_pointer_to_free = 0;
         int split_comm_to_free = 0;
         //we build a vector with rank job
         int val_tmp1 = 0;
@@ -788,7 +808,7 @@ int main (int argc, char *argv[]) {
         }
 
         //rank 0 gather the vector
-        MPI_Allgather(&readNumberByChr[i], 1, MPI_LONG_LONG_INT, localReadsNum_rank0, 1, MPI_LONG_LONG_INT, MPI_COMM_WORLD); //each process knows numbers chr's reads of other rank
+        MPI_Allgather(&readNumberByChr[i], 1, MPI_LONG_LONG_INT, localReadsNum_rank0, 1, MPI_LONG_LONG_INT, MPI_COMM_WORLD); 
 
         if (rank == 0) {
             //the rank 0 chose the first rank with reads to sort
@@ -897,15 +917,15 @@ int main (int argc, char *argv[]) {
         // with color of zero
         if (local_color == 0) {
             MPI_Comm_split( MPI_COMM_WORLD, local_color, local_key, &split_comm);
-            ierr = MPI_File_open(split_comm, file_name,  MPI_MODE_RDONLY, finfo, &mpi_file_split_comm);
+            //ierr = MPI_File_open(split_comm, file_name,  MPI_MODE_RDONLY, finfo, &mpi_file_split_comm);
             //we ask to liberate file pointer
-            file_pointer_to_free = 1;
+            //file_pointer_to_free = 1;
             //we ask to liberate the split_comm
             split_comm_to_free = 1;
 
         } else {
             MPI_Comm_split( MPI_COMM_WORLD, MPI_UNDEFINED, local_key, &split_comm);
-            mpi_file_split_comm = mpi_filed;
+            //mpi_file_split_comm = mpi_filed;
         }
 
         //now we change the rank in the reads structure
@@ -931,9 +951,6 @@ int main (int argc, char *argv[]) {
         MPI_Barrier(MPI_COMM_WORLD);
 
         if ((local_color == 0) && (i < nbchr)) {
-            if (i == nbchr - 2){ //If unmapped                    
-                continue;
-            }
 
             /*
              * Second part of the algorithm
@@ -1057,20 +1074,28 @@ int main (int argc, char *argv[]) {
                 local_offset_source_sorted[0]       = 0;
 
                 //those vectors are the same that  local_..._sorted but without zero padding
-                size_t *local_reads_coordinates_sorted_trimmed = NULL;
-                int *local_dest_rank_sorted_trimmed = NULL;
-                int *local_reads_sizes_sorted_trimmed = NULL;
-                size_t *local_offset_source_sorted_trimmed = NULL;
-                size_t *local_offset_dest_sorted_trimmed = NULL;
-                int *local_source_rank_sorted_trimmed = NULL;
+                size_t *local_reads_coordinates_sorted_trimmed      = NULL;
+                int *local_dest_rank_sorted_trimmed                 = NULL;
+                int *local_reads_sizes_sorted_trimmed               = NULL;
+                size_t *local_offset_source_sorted_trimmed          = NULL;
+                size_t *local_offset_dest_sorted_trimmed            = NULL;
+                int *local_source_rank_sorted_trimmed               = NULL;
+
+		size_t *local_reads_coordinates_sorted_trimmed2      = NULL;
+                int *local_dest_rank_sorted_trimmed2                 = NULL;
+                int *local_reads_sizes_sorted_trimmed2               = NULL;
+                size_t *local_offset_source_sorted_trimmed2          = NULL;
+                size_t *local_offset_dest_sorted_trimmed2            = NULL;
+                int *local_source_rank_sorted_trimmed2               = NULL;
+
 
                 //vectors used in the bruck just after the parabitonic sort
-                size_t *local_reads_coordinates_sorted_trimmed_for_bruck = NULL;
-                int *local_dest_rank_sorted_trimmed_for_bruck = NULL;
-                int *local_reads_sizes_sorted_trimmed_for_bruck = NULL;
-                size_t *local_offset_source_sorted_trimmed_for_bruck = NULL;
-                size_t *local_offset_dest_sorted_trimmed_for_bruck = NULL;
-                int *local_source_rank_sorted_trimmed_for_bruck = NULL;
+                size_t *local_reads_coordinates_sorted_trimmed_for_bruck    = NULL;
+                int *local_dest_rank_sorted_trimmed_for_bruck               = NULL;
+                int *local_reads_sizes_sorted_trimmed_for_bruck             = NULL;
+                size_t *local_offset_source_sorted_trimmed_for_bruck        = NULL;
+                size_t *local_offset_dest_sorted_trimmed_for_bruck          = NULL;
+                int *local_source_rank_sorted_trimmed_for_bruck             = NULL;
 
                 //task Init offset and size for source - free chr
                 // from mpiSort_utils.c
@@ -1091,6 +1116,9 @@ int main (int argc, char *argv[]) {
 
                 for (j = 0; j < local_readNum; j++) {
                     coord_index[j] = j;
+
+                //fprintf(stderr, "[MPISORT][AFTER GET COORDINATES] chr %d :: local_offset_source_unsorted[%zu] = %zu \n", i, j, local_offset_source_unsorted[j]); 
+
                 }
 
                 //To start we sort locally the reads coordinates.
@@ -1287,112 +1315,11 @@ int main (int argc, char *argv[]) {
                 }
                 MPI_Barrier(split_comm);
 
-		/*
-			INTER RANK OVERLAP ALGORITHM
-		*/
-
-                /*
-                    We make sure the reads for a given coordinate is not cut between ranks
-                    To do that we run through the destination rank vector and
-                    each time we jump a rank we verify the coordinates are different
-
-                    if the coordinates are the same we keep the previous rank 
-                    and we update the number of reads per job
-		*/
-
-
-		
-                time_count = MPI_Wtime();
-
-                size_t previous_rank_last_coord = 0;
-                int previous_rank_last_dest = 0;
-                size_t new_dest_rank = 0;
-                size_t previous_coordinates = 0;
-                size_t current_coordinates = 0;
-                int previous_dest_rank = 0;
-                int current_dest_rank = 0;
-                
-		        size_t j  = 0;
-                int j4    = 0;
-        		/*
-        			INTRA RANK OVERLAP ALGORITHM
-        		*/
-
-                previous_coordinates  = local_reads_coordinates_sorted[j];
-                previous_dest_rank    = local_dest_rank_sorted[j];
-		                      
-                
-		        for (j = 1; j < max_num_read; j++) {
-                
-                    current_coordinates  = local_reads_coordinates_sorted[j];
-                    current_dest_rank    = local_dest_rank_sorted[j];                   
-
-                    if ((previous_coordinates == current_coordinates)){
-
-                        if ( ( previous_coordinates != 0 ) && (  previous_dest_rank != current_dest_rank ) ){                   
-                            new_dest_rank++;
-                            local_dest_rank_sorted[j] = previous_dest_rank;
-                        }
-                    }		
-                    else{
-                        // we update previous_coordinates  
-                        previous_dest_rank    = current_dest_rank;
-                    }
-
-                    previous_coordinates = current_coordinates;				
-                }
-                               
-
-                /*
-			    INTER RANK OVERLAP ALGORITHM
-		        We make sure the reads for a given coordinate is not cut between ranks
-                To do that we run through the destination rank vector and
-                each time we jump a rank we verify the coordinates are different
-
-                if the coordinates are the same we keep the previous rank 
-                and we update the number of reads per job
-		        */
-               
-                //rank i envoie au rank i + 1
-
-                //Cwe care for overlapped coordinates between rank
-
-                if(split_rank != (split_size - 1)){
-
-                        MPI_Send(&local_reads_coordinates_sorted[max_num_read - 1], 1, MPI_LONG_LONG_INT, split_rank+1,  0, split_comm);
-                        MPI_Send(&local_dest_rank_sorted[max_num_read - 1], 1, MPI_INT, split_rank+1,  1, split_comm);
-                }
-                if(split_rank!=0){
-                        MPI_Recv(&previous_rank_last_coord, 1, MPI_LONG_LONG_INT, split_rank-1, 0, split_comm, MPI_STATUS_IGNORE);
-                        MPI_Recv(&previous_rank_last_dest, 1, MPI_INT, split_rank-1, 1, split_comm, MPI_STATUS_IGNORE);
-                }
-
-		        j=0;
-
-                //while(local_reads_coordinates_sorted[j]==0 && j < max_num_read ) {j++;j2++;j3++;}             
-		
-		
-                while((j < max_num_read) && (previous_rank_last_coord==local_reads_coordinates_sorted[j]) 
-                            && (local_dest_rank_sorted[j] != previous_rank_last_dest))
-                {
-		    
-		          local_dest_rank_sorted[j]=previous_rank_last_dest;
-		          new_dest_rank++;
-		          j++;
-                }
-		
-
-		        MPI_Barrier(split_comm);
-
-		
-                md_log_rank_debug( chosen_split_rank, "[MPISORT][COMPUTE NEW DEST RANK STEP 3] time spent = %f s\n", split_rank, MPI_Wtime() - time_count );
-                
-                
+		 int j4=0;      
                 // now we shall update the number of read per rank 
                 // we call new_num_reads_per_job the vector holding 
                 // the number of reads per rank after the Bruck dispatch 
                 size_t *new_num_reads_per_job = malloc(dimensions * sizeof(size_t));
-                
                 // the vector num_reads_per_dest_rank holds the local number of reads
                 // according to the destination rank 
                 size_t *num_reads_per_dest_rank = malloc(dimensions * sizeof(size_t));
@@ -1404,7 +1331,7 @@ int main (int argc, char *argv[]) {
                         num_reads_per_dest_rank[local_dest_rank_sorted[j]]++;
                     }	
                 }                
-                
+               
                 //we check if changing rank of destination doesn't affect the total read to sort 
 
                 size_t old_total_reads = 0;
@@ -1418,13 +1345,15 @@ int main (int argc, char *argv[]) {
 
                 size_t final_local_readNum = 0;	
                 final_local_readNum = new_num_reads_per_job[split_rank];
-                
+               	assert(final_local_readNum > 0);
+
+		
                 free(new_num_reads_per_job);
 
                 MPI_Allreduce( &final_local_readNum, &new_total_reads , 1, MPI_LONG_LONG_INT, MPI_SUM, split_comm );
                 MPI_Allreduce( &first_local_readNum, &old_total_reads , 1, MPI_LONG_LONG_INT, MPI_SUM, split_comm );
                 assert (old_total_reads == new_total_reads);
-                              
+		                              
 
                 /*
                  * REMOVE ZERO PADDING BEFORE BRUCK
@@ -1484,7 +1413,7 @@ int main (int argc, char *argv[]) {
                         /*
                          *
                          * FOR DEBUG
-                         *
+                         
 
                         for(y = 0; y < num_read_for_bruck; y++){
                             assert( local_reads_sizes_sorted_trimmed_for_bruck[y]       != 0 );
@@ -1536,7 +1465,7 @@ int main (int argc, char *argv[]) {
                     /*
                      *
                      * FOR DEBUG
-                     *
+                     
                     for(y = 0; y < num_read_for_bruck; y++){
                         assert( local_reads_sizes_sorted_trimmed_for_bruck[y]       != 0 );
                         assert( local_source_rank_sorted_trimmed_for_bruck[y]       < dimensions);
@@ -1561,8 +1490,14 @@ int main (int argc, char *argv[]) {
                 //}
                 md_log_rank_debug(chosen_split_rank, "[MPISORT][TRIMMING] time spent = %f s\n", split_rank, MPI_Wtime() - time_count);
 
-                /*
-                 * We do a Bruck on rank of origin reading
+
+		/*
+                 *
+                 *              FIRST BRUCK WE EXCHANGE ACCORDING TO
+                 *              DESTINATION RANK TO SEE COORDINATES
+                 *              OVERLAP
+                 *
+                 *
                  */
 
                 size_t m = 0;
@@ -1570,23 +1505,22 @@ int main (int argc, char *argv[]) {
                 int num_proc = dimensions;
                 size_t *number_of_reads_by_procs = calloc( dimensions, sizeof(size_t));
 
-                //fprintf(stderr,   "rank %d :::::[MPISORT] num_read_for_bruck = %zu \n", split_rank, num_read_for_bruck);
 
-                for (m = 0; m < num_read_for_bruck; m++) {
+                 for (m = 0; m < num_read_for_bruck; m++) {
                     //assert(new_pbs_orig_rank_off_phase1[m] < dimensions);
                     //assert(new_pbs_dest_rank_phase1[m] < dimensions);
-                    number_of_reads_by_procs[local_source_rank_sorted_trimmed_for_bruck[m]]++;
+                    number_of_reads_by_procs[local_dest_rank_sorted_trimmed_for_bruck[m]]++;
                 }
 
-                int *local_source_rank_sorted_trimmed_for_bruckv2 = malloc( num_read_for_bruck * sizeof(int));
+                int *local_dest_rank_sorted_trimmed_for_bruckv2 = malloc( num_read_for_bruck * sizeof(int));
 
                 for (m = 0; m < num_read_for_bruck; m++) {
-                    local_source_rank_sorted_trimmed_for_bruckv2[m] = local_source_rank_sorted_trimmed_for_bruck[m];
+                    local_dest_rank_sorted_trimmed_for_bruckv2[m] = local_dest_rank_sorted_trimmed_for_bruck[m];
                 }
 
                 size_t count6 = 0;
                 for (m_int = 0; m_int < dimensions; m_int++) count6 += number_of_reads_by_procs[m_int];
-                
+
                 assert( count6 == num_read_for_bruck );
                 MPI_Barrier(split_comm);
 
@@ -1597,25 +1531,14 @@ int main (int argc, char *argv[]) {
                 int **dest_rank                 = malloc(sizeof(int *) * dimensions);
                 int **source_rank               = malloc(sizeof(int *) * dimensions);
 
-                /*
-                 * We send in order
-                 *
-                 * local_offset_source_sorted_trimmed_for_bruck
-                 * local_dest_rank_sorted_trimmed_for_bruck
-                 * local_reads_coordinates_sorted_trimmed_for_bruck
-                 * local_reads_sizes_sorted_trimmed_for_bruck
-                 *
-                 */
-
-                
                 time_count = MPI_Wtime();
 
-                bruckWrite3(split_comm, 
+		bruckWrite3(split_comm,
                             split_rank,
                             dimensions,
                             count6,
                             number_of_reads_by_procs,
-                            local_source_rank_sorted_trimmed_for_bruckv2,
+                            local_dest_rank_sorted_trimmed_for_bruckv2,
                             local_offset_source_sorted_trimmed_for_bruck,     //offset sources
                             &local_source_offsets,
                             local_dest_rank_sorted_trimmed_for_bruck,         //destination rank
@@ -1630,12 +1553,8 @@ int main (int argc, char *argv[]) {
                             &dest_offsets
                            );
 
-                //if (split_rank == chosen_split_rank) {
-                //    fprintf(stderr, "rank %d :::::[MPISORT][BRUCK 3] time spent = %f s\n", split_rank, MPI_Wtime() - time_count);
-                //}
-
                 md_log_rank_debug(chosen_split_rank, "[MPISORT][BRUCK 3] time spent = %f s\n", split_rank, MPI_Wtime() - time_count);
-
+		MPI_Barrier(split_comm);
 
                 time_count = MPI_Wtime();
 
@@ -1645,7 +1564,9 @@ int main (int argc, char *argv[]) {
                 free(local_offset_source_sorted_trimmed_for_bruck);
                 free(local_offset_dest_sorted_trimmed_for_bruck);
                 free(local_source_rank_sorted_trimmed_for_bruck);
-                free(local_source_rank_sorted_trimmed_for_bruckv2);
+                free(local_dest_rank_sorted_trimmed_for_bruckv2);
+		
+		assert(first_local_readNum > 0);
 
                 local_reads_coordinates_sorted_trimmed    = malloc(first_local_readNum * sizeof(size_t));
                 local_offset_source_sorted_trimmed        = malloc(first_local_readNum * sizeof(size_t));
@@ -1654,22 +1575,18 @@ int main (int argc, char *argv[]) {
                 local_source_rank_sorted_trimmed          = malloc(first_local_readNum * sizeof(int));
                 local_reads_sizes_sorted_trimmed          = malloc(first_local_readNum * sizeof(int));
 
-                //if (split_rank == chosen_split_rank) {
-                //    fprintf(stderr, "rank %d :::::[MPISORT][FREE + MALLOC] time spent = %f s\n", split_rank, MPI_Wtime() - time_count);
-                //}
 
-                md_log_rank_debug(chosen_split_rank, "[MPISORT][FREE + MALLOC] time spent = %f s\n", split_rank, MPI_Wtime() - time_count);
-
-
-                /*
+                 /*
                  * GET DATA AFTER BRUCK
                  *
                  */
 
-                j = 0;
+		 j = 0;
                 size_t k = 0;
 
                 for (m_int = 0; m_int < num_proc; m_int++) {
+
+			//assert(number_of_reads_by_procs[m_int] > 0);
 
                     for (k = 0; k < number_of_reads_by_procs[m_int]; k++) {
 
@@ -1681,15 +1598,18 @@ int main (int argc, char *argv[]) {
                         local_source_rank_sorted_trimmed[k + j]         = source_rank[m_int][k];
 
                     }
-
-                    free(dest_offsets[m_int]);
-                    free(dest_rank[m_int]);
-                    free(read_size[m_int]);
-                    free(local_source_offsets[m_int]);
-                    free(reads_coordinates[m_int]);
-                    free(source_rank[m_int]);
+		    
+                    if (dest_offsets[m_int]) free(dest_offsets[m_int]);
+                    if (dest_rank[m_int]) free(dest_rank[m_int]);
+                    if (read_size[m_int]) free(read_size[m_int]);
+                    if (local_source_offsets[m_int]) free(local_source_offsets[m_int]);
+                    if (reads_coordinates[m_int]) free(reads_coordinates[m_int]);
+                    if (source_rank[m_int]) free(source_rank[m_int]);
+		
+		    		    
                     j += number_of_reads_by_procs[m_int];
                 }
+
 
                 free(number_of_reads_by_procs);
 
@@ -1716,8 +1636,229 @@ int main (int argc, char *argv[]) {
                 if (dest_offsets != NULL) {
                     free(dest_offsets);
                 }
+		local_readNum = first_local_readNum;
 
-                local_readNum = first_local_readNum;
+                MPI_Barrier(split_comm);
+
+                size_t *All_first_coordinates = malloc(dimensions * sizeof(size_t));
+                size_t *All_last_coordinates = malloc(dimensions * sizeof(size_t));
+                MPI_Allgather(&local_reads_coordinates_sorted_trimmed[0], 1, MPI_LONG_LONG_INT, All_first_coordinates, 1, MPI_LONG_LONG_INT, split_comm);
+                MPI_Allgather(&local_reads_coordinates_sorted_trimmed[first_local_readNum - 1],
+                                1, MPI_LONG_LONG_INT, All_last_coordinates, 1, MPI_LONG_LONG_INT, split_comm);
+
+
+                size_t local_first_coordinates = local_reads_coordinates_sorted_trimmed[0];
+                //we start at split_rank going backward
+                assert(local_first_coordinates == All_first_coordinates[split_rank] );
+
+                int send_rank = 0;
+
+                for (send_rank = 0; send_rank <=split_rank; send_rank++){
+                        if ( send_rank == split_rank ) break;
+                        // gere le rank 0
+                        if (send_rank == 0) if (local_first_coordinates == All_last_coordinates[send_rank]) break;
+
+                        if (local_first_coordinates == All_last_coordinates[send_rank]) break;
+
+                }
+                if (send_rank < split_rank){
+
+                        j = 0;
+                        while(j < local_readNum){
+                                if ((local_reads_coordinates_sorted_trimmed[j] == All_last_coordinates[send_rank]))
+                                        local_dest_rank_sorted_trimmed[j] = send_rank;
+                                j++;
+                        }
+
+                }
+
+                free(All_first_coordinates);
+                free(All_last_coordinates);
+
+                MPI_Barrier(split_comm);
+
+
+                /*
+                 *
+                 *              NOW WE MUST DO A BRUCK ACCORDING 
+                 *              TO OFFSET SOURCE LIKE IN REGULAR
+                 *              SORT
+                 *
+                 */
+
+
+
+
+                /*
+                 * We do a Bruck on rank of origin reading
+                 */
+
+                m = 0;
+                m_int = 0;
+                num_proc = dimensions;
+		num_read_for_bruck = local_readNum;
+                size_t *number_of_reads_by_procs2 = calloc( dimensions, sizeof(size_t));
+
+                //fprintf(stderr,   "rank %d :::::[MPISORT] num_read_for_bruck = %zu \n", split_rank, num_read_for_bruck);
+
+                for (m = 0; m < num_read_for_bruck; m++) {
+                    //assert(new_pbs_orig_rank_off_phase1[m] < dimensions);
+                    //assert(new_pbs_dest_rank_phase1[m] < dimensions);
+                    number_of_reads_by_procs2[local_source_rank_sorted_trimmed[m]]++;
+                }
+
+                int *local_source_rank_sorted_trimmed_for_bruckv2 = malloc( num_read_for_bruck * sizeof(int));
+
+                for (m = 0; m < num_read_for_bruck; m++) {
+                    local_source_rank_sorted_trimmed_for_bruckv2[m] = local_source_rank_sorted_trimmed[m];
+                }
+
+                count6 = 0;
+                for (m_int = 0; m_int < dimensions; m_int++) count6 += number_of_reads_by_procs2[m_int];
+                
+                assert( count6 == num_read_for_bruck );
+                MPI_Barrier(split_comm);
+
+                size_t **reads_coordinates2      = malloc(sizeof(size_t *) * dimensions);
+                size_t **local_source_offsets2   = malloc(sizeof(size_t *) * dimensions);
+                size_t **dest_offsets2           = malloc(sizeof(size_t *) * dimensions);
+                int **read_size2                 = malloc(sizeof(int *) * dimensions);
+                int **dest_rank2                 = malloc(sizeof(int *) * dimensions);
+                int **source_rank2               = malloc(sizeof(int *) * dimensions);
+
+                /*
+                 * We send in order
+                 *
+                 * local_offset_source_sorted_trimmed_for_bruck
+                 * local_dest_rank_sorted_trimmed_for_bruck
+                 * local_reads_coordinates_sorted_trimmed_for_bruck
+                 * local_reads_sizes_sorted_trimmed_for_bruck
+                 *
+                 */
+
+                
+                time_count = MPI_Wtime();
+
+                bruckWrite3(split_comm, 
+                            split_rank,
+                            dimensions,
+                            count6,
+                            number_of_reads_by_procs2,
+                            local_source_rank_sorted_trimmed_for_bruckv2,
+                            local_offset_source_sorted_trimmed,     //offset sources
+                            &local_source_offsets2,
+                            local_dest_rank_sorted_trimmed,         //destination rank
+                            &dest_rank2,
+                            local_reads_coordinates_sorted_trimmed, //reads coordinates
+                            &reads_coordinates2,
+                            local_reads_sizes_sorted_trimmed,       //read size
+                            &read_size2,
+                            local_source_rank_sorted_trimmed,       //source rank
+                            &source_rank2,
+                            local_offset_dest_sorted_trimmed,
+                            &dest_offsets2
+                           );
+
+                //if (split_rank == chosen_split_rank) {
+                //    fprintf(stderr, "rank %d :::::[MPISORT][BRUCK 3] time spent = %f s\n", split_rank, MPI_Wtime() - time_count);
+                //}
+
+                md_log_rank_debug(chosen_split_rank, "[MPISORT][BRUCK 3] time spent = %f s\n", split_rank, MPI_Wtime() - time_count);
+
+
+                time_count = MPI_Wtime();
+		
+		/*
+                free(local_reads_coordinates_sorted_trimmed);
+                free(local_dest_rank_sorted_trimmed);
+                free(local_reads_sizes_sorted_trimmed);
+                free(local_offset_source_sorted_trimmed);
+                free(local_offset_dest_sorted_trimmed);
+                free(local_source_rank_sorted_trimmed);
+                free(local_source_rank_sorted_trimmed_for_bruckv2);
+		*/
+
+                local_reads_coordinates_sorted_trimmed2    	= malloc(first_local_readNum * sizeof(size_t));
+                local_offset_source_sorted_trimmed2        	= malloc(first_local_readNum * sizeof(size_t));
+                local_offset_dest_sorted_trimmed2          	= malloc(first_local_readNum * sizeof(size_t));
+                local_dest_rank_sorted_trimmed2            	= malloc(first_local_readNum * sizeof(int));
+                local_source_rank_sorted_trimmed2          	= malloc(first_local_readNum * sizeof(int));
+                local_reads_sizes_sorted_trimmed2          	= malloc(first_local_readNum * sizeof(int));
+
+                //if (split_rank == chosen_split_rank) {
+                //    fprintf(stderr, "rank %d :::::[MPISORT][FREE + MALLOC] time spent = %f s\n", split_rank, MPI_Wtime() - time_count);
+                //}
+
+                md_log_rank_debug(chosen_split_rank, "[MPISORT][FREE + MALLOC] time spent = %f s\n", split_rank, MPI_Wtime() - time_count);
+
+
+                /*
+                 * GET DATA AFTER BRUCK
+                 *
+                 */
+
+                j = 0;
+                k = 0;
+
+                for (m_int = 0; m_int < num_proc; m_int++) {
+
+                    for (k = 0; k < number_of_reads_by_procs2[m_int]; k++) {
+
+                        local_offset_dest_sorted_trimmed2[k + j]         = dest_offsets2[m_int][k];
+                        local_dest_rank_sorted_trimmed2[k + j]           = dest_rank2[m_int][k];
+                        local_reads_sizes_sorted_trimmed2[k + j]         = read_size2[m_int][k];
+                        local_offset_source_sorted_trimmed2[k + j]       = local_source_offsets2[m_int][k];
+                        local_reads_coordinates_sorted_trimmed2[k + j]   = reads_coordinates2[m_int][k];
+                        local_source_rank_sorted_trimmed2[k + j]         = source_rank2[m_int][k];
+
+                    }
+
+                    free(dest_offsets2[m_int]);
+                    free(dest_rank2[m_int]);
+                    free(read_size2[m_int]);
+                    free(local_source_offsets2[m_int]);
+                    free(reads_coordinates2[m_int]);
+                    free(source_rank2[m_int]);
+                    j += number_of_reads_by_procs2[m_int];
+                }
+
+
+                free(number_of_reads_by_procs2);
+
+                if (dest_rank2 != NULL) {
+                    free(dest_rank2);
+                }
+
+                if (read_size2 != NULL) {
+                    free(read_size2);
+                }
+
+                if (local_source_offsets2 != NULL) {
+                    free(local_source_offsets2);
+                }
+
+                if (reads_coordinates2 != NULL) {
+                    free(reads_coordinates2);
+                }
+
+                if (source_rank2 != NULL) {
+                    free(source_rank2);
+                }
+
+                if (dest_offsets2 != NULL) {
+                    free(dest_offsets2);
+                }
+
+
+		free(local_reads_coordinates_sorted_trimmed);
+                free(local_dest_rank_sorted_trimmed);
+                free(local_reads_sizes_sorted_trimmed);
+                free(local_offset_source_sorted_trimmed);
+                free(local_offset_dest_sorted_trimmed);
+                free(local_source_rank_sorted_trimmed);
+                //free(local_source_rank_sorted_trimmed_for_bruckv2);
+
+                //local_readNum = first_local_readNum;
 
 
                 /*
@@ -1732,43 +1873,187 @@ int main (int argc, char *argv[]) {
                     assert ( local_dest_rank_sorted_trimmed[j]            < split_size );
                     assert ( local_source_rank_sorted_trimmed[j]          < split_size );
                 }
-                */
+                
 
-                free(local_reads_coordinates_sorted_trimmed);
+                for ( j = 0; j < local_readNum; j++){
+                   fprintf(stderr, "[MPISORT][CHR = %i] local_offset_source_sorted_trimmed[%zu] = %zu \n", i ,j, local_offset_source_sorted_trimmed[j]);
+                 }
+                */
+                free(local_reads_coordinates_sorted_trimmed2);
 
                 md_log_rank_debug(chosen_split_rank, "[MPISORT] we call write SAM\n");
 
-                malloc_trim(0);
-
                 time_count = MPI_Wtime();
-                
-                writeSam(
-                    split_rank,
-                    output_dir,
-                    header,
-                    local_readNum,
-                    chrNames[i],
-                    split_size,
-                    split_comm,
-                    chosen_split_rank,
-                    finfo,
-                    compression_level,
-                    local_offset_dest_sorted_trimmed,
-                    local_offset_source_sorted_trimmed,
-                    local_reads_sizes_sorted_trimmed,
-                    local_dest_rank_sorted_trimmed,
-                    local_source_rank_sorted_trimmed,
-                    local_data,
-                    goff[rank],
-                    first_local_readNum,
-		            final_local_readNum
-                );
+                                   
+                if (i == nbchr - 2){
+
+                    //now if we are in discordant case we call writesam with empty vectors 
+                    //of discordant duplicates 
+                    //local_disc_duplicate_offset_source = malloc( total_reads_discordant * sizeof(size_t));
+
+                    local_disc_duplicate_offset_source = writeSam_discordant(
+                                                            split_rank,
+                                                            output_dir,
+                                                            header,
+							    local_readNum,
+                                                            chrNames[i],
+                                                            split_size,
+                                                            split_comm,
+                                                            chosen_split_rank,
+                                                            finfo,
+                                                            compression_level,
+                                                            local_offset_dest_sorted_trimmed2,
+                                                            local_offset_source_sorted_trimmed2,
+                                                            local_reads_sizes_sorted_trimmed2,
+                                                            local_dest_rank_sorted_trimmed2,
+                                                            local_source_rank_sorted_trimmed2,
+                                                            local_data,
+                                                            goff[rank],
+                                                            first_local_readNum,
+                                                            local_disc_duplicate_number
+                                                        );
+
+                    /*
+                    for (size_t k = 0; k < local_disc_duplicate_number[0]; k++){
+                        fprintf(stderr, "[MPISORT] rank %d all dup disc offset = %zu  offset= %zu \n", split_rank, 
+                                k, local_disc_duplicate_offset_source[k]);
+
+                    }        
+                    */
+                    /*
+                        Now we exchange every local_disc_duplicate_offset_source
+                        We use AllGather
+                    */    
+                    
+                    
+                    size_t max_disc_duplicates = 0;
+
+                    MPI_Allreduce(local_disc_duplicate_number, 
+                                    total_disc_duplicates, 
+                                    1, 
+                                    MPI_LONG_LONG_INT, 
+                                    MPI_SUM, split_comm
+                                    );
+
+                    size_t *disc_dup_by_rank = malloc(num_proc * sizeof(size_t));
+                        
+                    MPI_Allgather( local_disc_duplicate_number , 
+                                        1, 
+                                        MPI_LONG_LONG_INT,
+                                        disc_dup_by_rank, 
+                                        1,
+                                        MPI_LONG_LONG_INT,
+                                        split_comm);
+
+                    MPI_Allreduce(local_disc_duplicate_number ,
+                                    &max_disc_duplicates, 
+                                        1, 
+                                        MPI_LONG_LONG_INT,
+                                        MPI_MAX,
+                                        split_comm);
+    
+                    size_t *tmp_vec = calloc(max_disc_duplicates, sizeof(size_t));
+
+                    for ( j = 0; j < *local_disc_duplicate_number; j++) 
+                        tmp_vec[j] = local_disc_duplicate_offset_source[j];
+
+
+
+                    size_t tmp2 = max_disc_duplicates * split_size;
+
+                    md_log_debug("rank %d total disc offset= %zu \n", rank, *total_disc_duplicates);
+                    
+                    size_t *tmp_vec2 = calloc(tmp2,  sizeof(size_t));
+          
+                    //double timeStamp = MPI_Wtime();
+                    MPI_Barrier(split_comm);
+                        
+                    MPI_Allgather( tmp_vec, 
+                                max_disc_duplicates, 
+                                MPI_LONG_LONG_INT,
+                                tmp_vec2, 
+                                max_disc_duplicates,
+                                MPI_LONG_LONG_INT,
+                                split_comm);
+                                            
+                    MPI_Barrier(split_comm);
+        
+                    all_disc_duplicate_offset_source = calloc(*total_disc_duplicates,  sizeof(size_t));
+                    size_t ind = 0;
+
+                    for ( j = 0; j < tmp2; j++) {
+                        if (tmp_vec2[j] != 0){
+                            all_disc_duplicate_offset_source[ind] = tmp_vec2[j];
+                            ind++;
+                        }
+                    }
+                    /*
+                    for ( j = 0; j < ind; j++) {
+                        //disc_dup_offset_source[0][j] = disc_dup_offset_source_tmp[j];
+                        if ( rank == 0 )
+                            fprintf(stderr, " TRACE 1 tmp_vec2[%zu] =%zu \n", j, all_disc_duplicate_offset_source[j]);
+                    }
+                    */
+
+		    // we create a skip list
+		    time_count = MPI_Wtime();
+
+		    for (j = 0; j < *total_disc_duplicates; j++) 
+        			Insert(&sl,all_disc_duplicate_offset_source[j]);
+
+
+		    //fprintf(stderr, "SKIPLIST TIME TO CREATE %f \n", MPI_Wtime() - time_count);		    
+                    free(tmp_vec);
+                    free(tmp_vec2);
+                    free(local_disc_duplicate_offset_source);
+                    free(local_disc_duplicate_number);
+
+                }
+                else{
+
+                    //if not in dicordant case we call writesam with vectors 
+                    // of discordant duplicates of all ranks 
+                    
+                    writeSam(
+                        split_rank,
+                        output_dir,
+                        header,
+			&ref_htbl,
+			&rg_htbl,
+                        local_readNum,
+                        chrNames[i],
+                        split_size,
+                        split_comm,
+                        chosen_split_rank,
+                        finfo,
+                        compression_level,
+                        local_offset_dest_sorted_trimmed2,
+                        local_offset_source_sorted_trimmed2,
+                        local_reads_sizes_sorted_trimmed2,
+                        local_dest_rank_sorted_trimmed2,
+                        local_source_rank_sorted_trimmed2,
+                        local_data,
+                        goff[rank],
+                        first_local_readNum,
+			&sl
+                    );
+			/*
+			free(local_offset_dest_sorted_trimmed2);
+                        free(local_offset_source_sorted_trimmed2);
+                        free(local_reads_sizes_sorted_trimmed2);
+                        free(local_dest_rank_sorted_trimmed2);
+                        free(local_source_rank_sorted_trimmed2);
+			*/
+
+
+                }
 
                 //if (split_rank == chosen_split_rank) {
                 //    fprintf(stderr, "rank %d :::::[MPISORT][WRITESAM] chromosom %s :::  %f seconds\n\n\n", split_rank, chrNames[i], MPI_Wtime() - time_count);
                 //}
-                md_log_rank_info(chosen_split_rank, "[MPISORT][WRITESAM] chromosom %s :: %f seconds\n\n", chrNames[i], MPI_Wtime() - time_count);
+                md_log_rank_info(chosen_split_rank, "[MPISORT] chromosom %s :: %f seconds\n\n", chrNames[i], MPI_Wtime() - time_count);
 
+               
             } else {
 
                 /*
@@ -1778,25 +2063,137 @@ int main (int argc, char *argv[]) {
                  *
                  */
 
-                parallel_sort_any_dim(
-                    dimensions,                 //dimension for parabitonic
-                    local_readNum,
-                    split_rank,
-                    split_size,
-                    reads,
-                    i,                          //chromosom number
-                    chosen_split_rank,
-                    split_comm,
-                    localReadNumberByChr,
-                    local_data,
-                    output_dir,
-                    finfo,
-                    compression_level,
-                    total_reads_by_chr,
-                    goff[rank],
-                    headerSize,
-                    header,
-                    chrNames[i]  );
+                if (i == nbchr - 1){
+
+                    local_disc_duplicate_offset_source = parallel_sort_any_dim_discordant(
+                                                                    dimensions,                 //dimension for parabitonic
+                                                                    local_readNum,
+                                                                    split_rank,
+                                                                    split_size,
+                                                                    reads,
+                                                                    i,                          //chromosom number
+                                                                    chosen_split_rank,
+                                                                    split_comm,
+                                                                    localReadNumberByChr,
+                                                                    local_data,
+                                                                    output_dir,
+                                                                    finfo,
+                                                                    compression_level,
+                                                                    total_reads_by_chr,
+                                                                    goff[rank],
+                                                                    headerSize,
+                                                                    header,
+                                                                    chrNames[i],
+                                                                    local_disc_duplicate_number
+                                                                    );
+                    /*
+                        Now we exchange every local_disc_duplicate_offset_source
+                        We use AllGather
+                    */    
+             
+                    
+                    size_t max_disc_duplicates = 0;
+
+                    MPI_Allreduce(local_disc_duplicate_number, 
+                                    total_disc_duplicates, 
+                                    1, 
+                                    MPI_LONG_LONG_INT, 
+                                    MPI_SUM, split_comm
+                                    );
+
+                    size_t *disc_dup_by_rank = malloc(num_proc * sizeof(size_t));
+                        
+                    MPI_Allgather( local_disc_duplicate_number , 
+                                        1, 
+                                        MPI_LONG_LONG_INT,
+                                        disc_dup_by_rank, 
+                                        1,
+                                        MPI_LONG_LONG_INT,
+                                        split_comm);
+
+                    MPI_Allreduce(local_disc_duplicate_number ,
+                                    &max_disc_duplicates, 
+                                        1, 
+                                        MPI_LONG_LONG_INT,
+                                        MPI_MAX,
+                                        split_comm);
+    
+                    size_t *tmp_vec = calloc(max_disc_duplicates, sizeof(size_t));
+
+                    for ( j = 0; j < *local_disc_duplicate_number; j++) 
+                        tmp_vec[j] = local_disc_duplicate_offset_source[j];
+
+
+
+                    size_t tmp2 = max_disc_duplicates * split_size;
+
+                    md_log_debug("rank %d total disc offset= %zu \n", rank, *total_disc_duplicates);
+                    
+                    size_t *tmp_vec2 = calloc(tmp2,  sizeof(size_t));
+          
+                    //double timeStamp = MPI_Wtime();
+                    MPI_Barrier(split_comm);
+                        
+                    MPI_Allgather( tmp_vec, 
+                                max_disc_duplicates, 
+                                MPI_LONG_LONG_INT,
+                                tmp_vec2, 
+                                max_disc_duplicates,
+                                MPI_LONG_LONG_INT,
+                                split_comm);
+                                            
+                    MPI_Barrier(split_comm);
+        
+                    all_disc_duplicate_offset_source = calloc(*total_disc_duplicates,  sizeof(size_t));
+                    size_t ind = 0;
+
+                    for ( j = 0; j < tmp2; j++) {
+                        if (tmp_vec2[j] != 0){
+                            all_disc_duplicate_offset_source[ind] = tmp_vec2[j];
+                            ind++;
+                        }
+                    }
+                    
+                    for ( j = 0; j < ind; j++) {
+                        //disc_dup_offset_source[0][j] = disc_dup_offset_source_tmp[j];
+                        if ( rank == 0 )
+                            fprintf(stderr, " TRACE 1 tmp_vec2[%zu] =%zu \n", j, all_disc_duplicate_offset_source[j]);
+                    }
+        
+                    free(tmp_vec);
+                    free(tmp_vec2);
+                    free(local_disc_duplicate_offset_source);
+                    free(local_disc_duplicate_number);
+
+                }
+                else {
+
+                        parallel_sort_any_dim(
+                                            dimensions,                 //dimension for parabitonic
+                                            local_readNum,
+                                            split_rank,
+                                            split_size,
+                                            reads,
+                                            i,                          //chromosom number
+                                            chosen_split_rank,
+                                            split_comm,
+                                            localReadNumberByChr,
+                                            local_data,
+                                            output_dir,
+                                            finfo,
+                                            compression_level,
+                                            total_reads_by_chr,
+                                            goff[rank],
+                                            headerSize,
+                                            header,
+					    &ref_htbl,
+					    &rg_htbl,
+                                            chrNames[i],
+                                            all_disc_duplicate_offset_source,
+                                            total_disc_duplicates,
+					    &sl
+                                            );
+                }
 
             } //end if dimensions < split_rank
 
@@ -1810,9 +2207,9 @@ int main (int argc, char *argv[]) {
         MPI_Barrier(MPI_COMM_WORLD);
 
         //we free the file pointer
-        if  (file_pointer_to_free) {
-            MPI_File_close(&mpi_file_split_comm);
-        }
+        //if  (file_pointer_to_free) {
+        //    MPI_File_close(&mpi_file_split_comm);
+        //}
 
         //we free the split_comm
         if (split_comm_to_free) {
@@ -1827,7 +2224,10 @@ int main (int argc, char *argv[]) {
     MPI_Info_free(&finfo);
     free(goff);
     free(local_data);
-
+    /*
+    Read[i] is now free in 
+    get_coordinates_and_offset_source_and_size_and_free_reads
+    
     for ( i = 0; i < nbchr - 2; i++) {
         Read *tmp = reads[i], *next;
 
@@ -1840,21 +2240,24 @@ int main (int argc, char *argv[]) {
             tmp = next;
         }
     }
+    */
 
     MPI_Barrier(MPI_COMM_WORLD);
 
     free(header); //ok
     free(localReadNumberByChr); //ok
+    if (all_disc_duplicate_offset_source) free(all_disc_duplicate_offset_source);
+    if (total_disc_duplicates) free(total_disc_duplicates);
 
+    Destroy(&sl);
 
-    for ( i = 0; i < nbchr; i++) {
-        free(chrNames[i]);
-    }
+    for ( i = 0; i < nbchr; i++) free(chrNames[i]);
+    for ( i = 0; i < nbrg; i++) free(rgNames[i]);
 
     free(reads); //ok
     free(readNumberByChr); //ok
-
-    malloc_trim(0);
+    chtbl_destroy(&ref_htbl);
+    chtbl_destroy(&rg_htbl);
     res = MPI_Finalize();
     assert(res == MPI_SUCCESS);
 
@@ -1866,25 +2269,38 @@ int main (int argc, char *argv[]) {
 static void usage(const char *prg) {
 
     fprintf(stderr, "Program: MPI version for sorting and marking duplicates of paired aligned FASTQ data\n"
-            "Version: v%s\n"
-            "Contact 1: Frederic Jarlier (frederic.jarlier@curie.fr) \n"
-            "usage : mpirun -n TOTAL_PROC %s FILE_TO_SORT OUTPUT_FOLDER -q QUALITY -d OPTICAL_DISTANCE -v VERBOSE\n"
-            "TOTAL_PROC should be a power of 2.\n"
-            "OPTICAL_DISTANCE is 0 by default\n"
-            "VERBOSE is the log file severity (4 by default)\n"
-            "OUTPUT_FOLDER : a gz files per chromosome, a gz file of unmapped reads \n"
-            "a gz files of discordants reads. \n"
-            "Discordants reads are reads where one pairs align on a chromosome \n"
-            "and the other pair align on another chromosome \n"
-            "Unmapped reads are reads without coordinates on any genome \n"
-            "Requirements : gcc > 4.8, automake 1.15, autoconf 2.69 and a MPI compiler\n"
-            ""
-            ""
-            "For perfomances matters the file you want to sort could be \n"
-            "stripped on a parallel file system. \n"
-            "With Lustre you mention it with lfs setstripe command like this \n"
-            "lfs set stripe -c stripe_number -s stripe_size folder           \n"
-            , VERSION, prg);
+            "Version: %s\n"
+            "\nusage : mpirun -n TOTAL_PROC %s SAM_FILE OUTPUT_DIRECTORY -q QUALITY -d OPTICAL_DISTANCE -v VERBOSE\n"
+            "\n\tTOTAL_PROC tells how many cores will be used by MPI to parallelize the computation.\n"
+            "\tIt should be a power of 2.\n"
+            "\noptions:\n"
+            "\n\t-q INTEGER\n"
+            "\t     filters the reads according to their quality. Reads quality under the\n"
+            "\t     threshold are ignored in the sorting results. Default is 0 (all reads are kept).\n"
+            "\n\t-d INTEGER\n"
+            "\t     is the optical distance for duplicates (default is 0).\n"
+            "\n\t-v INTEGER\n"
+            "\t     is the level of verbosity\n"
+            "\t     0 is OFF, 1 is ERROR, 2 is WARNING, 3 INFO (default), 4 is DEBUG, 5 TRACE\n"
+            "\n\t-n\n"
+            "\t     sorts the read by their name (but it is not commonly used).\n"
+            "\ninput: input file is a sam file of paired reads\n"
+            "\noutput: set of gz files in the OUTPUT_DIRECTORY with\n"
+            "\t* one per chromosome (e.g. chr11.gz)\n"
+            "\t* one for discordant reads (discordant.gz): discordants reads are reads \n"
+            "\t  where one pair aligns on a chromosome and the other pair aligns on \n"
+            "\t  another chromosome \n"
+            "\t* one for unmapped reads (unmapped.gz): unmapped reads are reads without \n"
+            "\t  coordinates on any chromosome \n"
+		    "\nexample : mpirun -n 4 %s  HCC1187C_70K_READS.sam ${HOME}/mpiMarkDupExample -q 0 -n \n"
+            "\nFor more detailed documentation visit:\n"
+            "\thttps://github.com/bioinfo-pf-curie/mpiSORT\n"
+            "\nCopyright (C) 2020  Institut Curie <http://www.curie.fr> \n"
+            "\nThis program comes with ABSOLUTELY NO WARRANTY. \n"
+            "This is free software, and you are welcome to redistribute it \n"
+            "under the terms of the CeCILL License. \n"
+		    "\ncontact: Frederic Jarlier (frederic.jarlier@curie.fr) \n"
+            , VERSION, prg, prg);
 
     return;
 }

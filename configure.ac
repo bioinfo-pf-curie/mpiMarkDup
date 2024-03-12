@@ -1,8 +1,8 @@
 # Process this file with autoconf to produce a configure script.
 AC_PREREQ([2.69])
-AC_INIT([mpimd], [1.0])
+AC_INIT([mpiMarkDup], [1.0])
 #AC_CONFIG_HEADERS([src/config.h])
-AM_INIT_AUTOMAKE([1.15 foreign -Wall])
+AM_INIT_AUTOMAKE([1.13 foreign -Wall])
 
 # Checks for programs.
 AC_PROG_CC([mpicc])
@@ -19,14 +19,14 @@ AC_CHECK_FUNCS([strndup])
 AC_CHECK_FUNCS([strstr]) 
 AC_CHECK_FUNCS([strtoull])
 
-AC_CHECK_HEADERS([fcntl.h]) wanted by: src/mpiSort.c:45
-AC_CHECK_HEADERS([limits.h]) wanted by: src/khash.h:101
-AC_CHECK_HEADERS([malloc.h]) wanted by: src/mpiSort.c:54
-AC_CHECK_HEADERS([stddef.h]) wanted by: unit-tests/TestUtils.c:27
-AC_CHECK_HEADERS([stdint.h]) wanted by: src/common.h:3
-AC_CHECK_HEADERS([stdlib.h]) wanted by: src/khash.h:99
-AC_CHECK_HEADERS([string.h]) wanted by: src/khash.h:100
-AC_CHECK_HEADERS([unistd.h]) wanted by: src/mpiSort.c:51
+AC_CHECK_HEADERS([fcntl.h]) 
+AC_CHECK_HEADERS([limits.h]) 
+AC_CHECK_HEADERS([malloc.h]) 
+AC_CHECK_HEADERS([stddef.h]) 
+AC_CHECK_HEADERS([stdint.h]) 
+AC_CHECK_HEADERS([stdlib.h]) 
+AC_CHECK_HEADERS([string.h]) 
+AC_CHECK_HEADERS([unistd.h]) 
 AC_CHECK_HEADER_STDBOOL
 
 AC_C_INLINE

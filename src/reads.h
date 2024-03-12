@@ -1,3 +1,17 @@
+/*
+   This file is part of mpiMarkDup
+   
+   Copyright Institut Curie 2020
+   
+   This software is a computer program whose purpose is to sort SAM file and mark duplicates.
+   
+   You can use, modify and/ or redistribute the software under the terms of license (see the LICENSE file for more details).
+   
+   The software is distributed in the hope that it will be useful, but "AS IS" WITHOUT ANY WARRANTY OF ANY KIND. Users are therefore encouraged to test the software's suitability as regards their requirements in conditions enabling the security of their systems and/or data. 
+   
+   The fact that you are presently reading this means that you have had knowledge of the license and that you accept its terms.
+*/
+
 #ifndef READS_H
 #define READS_H
 
@@ -7,7 +21,7 @@
 #include <mpi.h>
 
 #include "common.h"
-#include "mpiMD_utils.h"
+#include "mpiMarkDuplicatesUtils.h"
 
 typedef struct {
     int x;
@@ -30,14 +44,28 @@ typedef struct readInfo {
     size_t mateIndexAfterSort;          /**< mate index in file */
    
 
+<<<<<<< HEAD
+    char *Qname;                            /**< read name, TODO:we don't need to store Qname, we just use it to compte physical location for optical duplicates */
+    char *cigar;                            /**< cigar string, TODO:we don't need to store cigar, we just use it to compute unclipped coordinate */
+    
+                                            /**< mate chromosome number */
+                 
+    unsigned int d: 1;                      /**< tell if the read is a duplicate */
+    unsigned int checked: 1;                /**< tell the read has already been checked */
+    unsigned int check_with_bruck: 2;       /**< the mate is in another buffer we need bruck to check */
+    unsigned int external: 1;               /**< it means this read comes from another buffer we don(t mark it as duplicate */
+    unsigned int isOpticalDuplicate : 1;    /**< read is optical duplicate ? */
+=======
     unsigned int d: 1;                    /**< tell if the read is a duplicate */
     unsigned int checked: 1;              /**< tell the read has already been checked */
     unsigned int check_with_bruck: 2;     /**< the mate is in another buffer we need bruck to check */
     unsigned int external: 1;             /**< it means this read comes from another buffer we don(t mark it as duplicate */
     unsigned int isOpticalDuplicate : 1;  /**< read is optical duplicate ? */
+>>>>>>> master
     unsigned int valueFlag;                   /**< flag of the read */
-    unsigned int pair_num;               /**< tell if the read is first(1) or second in the pair(2) */    
+    unsigned int pair_num;                  /**< tell if the read is first(1) or second in the pair(2) */    
     unsigned int orientation;
+    unsigned int discordant;
 
     int mate_rank;                   /**< the rank where the mate is supposed to be */
     int phred_score;                 /**< read phred score */
@@ -46,6 +74,17 @@ typedef struct readInfo {
     int readChromosome;              /**< read chromosome number */
     int mateChromosome; 
 
+<<<<<<< HEAD
+    size_t fingerprint;    /**< MD5 of the Qname + number in pair */
+    size_t mate_fingerprint;
+    size_t coordPos;                    /**< clipped read position (coordinate in sam file) */
+    size_t unclippedCoordPos;           /**< unclipped read position */
+    size_t coordMatePos;                /**< clipped mate position (coordinate in sam file) */
+    size_t indexAfterSort;              /**< read index in file */
+    size_t mateIndexAfterSort;          /**< mate index in file */
+    size_t offset_source_sam;           // offset of the duplicate in the source file 
+=======
+>>>>>>> master
     coord physicalLocation;             /**< read physical location (in QNAME) */
     char *Qname;                        /**< read name, TODO:we don't need to store Qname, we just use it to compte physical location for optical duplicates */
     char *cigar;                        /**< cigar string, TODO:we don't need to store cigar, we just use it to compute unclipped coordinate */
@@ -73,7 +112,7 @@ typedef struct {
     unsigned int pair_num;
     unsigned int valueFlag;
     unsigned int orientation;
-
+    
     int readLb;
     int mateRank;                  /**< mate rank */
     int phredScore;                /**< mate phredScore */
@@ -94,11 +133,13 @@ typedef struct {
 
 
 int freeRead(readInfo *read) ;
-readInfo *cloneRead(readInfo *read) ;
+void cloneRead(readInfo *read, readInfo *mate) ;
 void createMateType(MPI_Datatype *mate_type) ;
 void createCMType(MPI_Datatype *CMtype) ;
 int cmpMateRank(const void *a, const void *b) ;
 //orientation getOrientation (readInfo *read, const int isPaired) ;
 unsigned int getOrientation (readInfo *read, const int isPaired);
-int isPaired(readInfo *read) ;
+unsigned int getOrientation_v2 (const int isPaired, unsigned int read_flag, unsigned int mate_flag);
+
+int isPaired(readInfo *read);
 #endif /* ifndef READS_H */

@@ -1,19 +1,15 @@
 /*
-   mpiSORT
-   Copyright (C) 2016-2019 Institut Curie / Institut Pasteur
-
-   mpiSORT is free software; you can redistribute it and/or
-   modify it under the terms of the GNU Lesser General Public
-   License as published by the Free Software Foundation; either
-   version 2.1 of the License, or (at your option) any later version.
-
-   mpiSORT is distributed in the hope that it will be useful,
-   but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-   Lesser General Public License for more details.
-
-   You should have received a copy of the GNU Lesser Public License
-   along with mpiSORT.  If not, see <http://www.gnu.org/licenses/>.
+   This file is part of mpiMarkDup
+   
+   Copyright Institut Curie 2020
+   
+   This software is a computer program whose purpose is to sort SAM file and mark duplicates.
+   
+   You can use, modify and/ or redistribute the software under the terms of license (see the LICENSE file for more details).
+   
+   The software is distributed in the hope that it will be useful, but "AS IS" WITHOUT ANY WARRANTY OF ANY KIND. Users are therefore encouraged to test the software's suitability as regards their requirements in conditions enabling the security of their systems and/or data. 
+   
+   The fact that you are presently reading this means that you have had knowledge of the license and that you accept its terms.
 */
 
 /*
@@ -41,13 +37,27 @@
 #include <mpi.h>
 
 #include "qksort.h"
-#include "write_utils.h"
-#include "parabitonicsort.h"
+#include "writeUtils.h"
+#include "parallelBitonicSort.h"
+/*
+typedef struct skip_node_t {
+	int key, level; 
+	struct skip_node_t *prev, *next; 
+	struct skip_node_t *down, *up; 
+} skip_node; 
 
+
+typedef struct skip_list_t {
+	skip_node *head, *tail; 
+	int nElems;
+} skip_list;
+*/
 void writeSam(
 		int rank,
 		char* output_dir,
 		char* header,
+		CHTbl *htblref,
+		CHTbl *htblrg,
 		size_t local_readNum,
 		char* chrName,
 		int total_num_proc,  //this is the number of proc in split communication
@@ -63,8 +73,32 @@ void writeSam(
 		char* data,
 		size_t offset_data_in_file,
 		size_t original_local_readNum,
-		size_t final_local_readNum
+		skip_list *list
 		);
+
+size_t *writeSam_discordant(
+    int rank,
+    char *output_dir,
+    char *header,
+    size_t local_readNum,
+    char *chrName,
+    int total_num_proc,  //this is the number of proc in split communication
+    MPI_Comm split_comm,
+    int master_rank,
+    MPI_Info finfo,
+    int compression_level,
+    size_t *offset_dest_phase1,
+    size_t *offset_source_phase1,
+    int *read_size_phase1,
+    int *dest_rank_phase1,
+    // use when redistribute the reads according to original rank
+    // when sorting of offset sources is done
+    int *source_rank_phase1,
+    char *data,
+    size_t start_offset_in_file,
+    size_t previous_local_readNum,
+    size_t *disc_dup_number
+);
 
 
 size_t init_offset_and_size_free_chr(size_t* offset, 
@@ -85,7 +119,7 @@ void read_data_for_writing(int rank,
 							MPI_File in, 
 							MPI_Info finfo, 
 							MPI_Comm COMM_WORLD);
-
+/*
 void bruckWrite(MPI_Comm comm,
 				int rank, 
 				int num_proc,
@@ -99,6 +133,21 @@ void bruckWrite(MPI_Comm comm,
 				int *new_size, 
 				int ***data_size
 	);
+*/
+void bruckWrite(MPI_Comm comm, 
+				int rank, 
+				int num_proc,
+                size_t local_readNum, 
+                size_t *number_of_reads_by_procs, 
+                int *new_rank,
+                size_t *buffs_by_procs, 
+                char ***data2,
+                size_t *new_offset, 
+                size_t ***data_offsets,
+                size_t *new_offset_source, 
+                size_t ***data_offsets_source,
+                int *new_size, 
+                int ***data_size);
 
 void bruckWrite2(
 	    MPI_Comm comm,
@@ -138,6 +187,22 @@ void bruckWrite3(
 		size_t ***dest_offset
 );
 
+void bruckWrite4(MPI_Comm comm, 
+				int rank, 
+				int num_proc,
+                size_t local_readNum, 
+                size_t *number_of_reads_by_procs, 
+                int *new_rank,
+                size_t *buffs_by_procs, 
+                char ***data2,
+                size_t *new_offset, 
+                size_t ***data_offsets,
+                size_t *new_offset_source, 
+                size_t ***data_offsets_source,
+                int *new_size, 
+                int ***data_size
+);
+
 void bruckMarkdup(
     MPI_Comm comm,
     int rank,
@@ -171,6 +236,26 @@ void bruckMarkdup(
     unsigned int ***rcv_mate_orientation
 );
 
+void bruckMarkdup_v2(
+    MPI_Comm comm,
+    int rank,
+    int num_proc,
+    size_t local_readNum,
+    size_t *number_of_reads_by_procs,
+    int *new_rank,
+    int *snd_mate_phredscore,    
+    int ***rcv_mate_phredscore,
+    size_t *snd_mate_indexAfterSort,
+    size_t ***rcv_mate_indexAfterSort,
+    size_t *snd_mate_unclippedCoordPos,
+    size_t ***rcv_mate_unclippedCoordPos,
+    size_t *snd_mate_coordPos,
+    size_t ***rcv_mate_coordPos,
+    size_t *snd_mate_fingerprint,
+    size_t ***rcv_mate_fingerprint,
+    unsigned int *snd_mate_valueFlag,
+    unsigned int ***rcv_mate_valueFlag
+);
 
 void bruck_reads(	MPI_Comm comm, 
 					int rank, 
@@ -206,7 +291,7 @@ void bruck_unsigned_int( 	MPI_Comm comm,
             				unsigned int *new_size);
 
 
-void writeSam_discordant_and_unmapped(int split_rank, 
+void writeSam_unmapped(int split_rank, 
 									  char* output_dir, 
 									  char* header, 
 									  size_t local_readNum, 
@@ -221,7 +306,7 @@ void writeSam_discordant_and_unmapped(int split_rank,
 
 
 
-void writeSam_any_dim(
+size_t *writeSam_any_dim_discordant(
 		int dimensions,
 		int rank,
 		char* output_dir,
@@ -240,7 +325,35 @@ void writeSam_any_dim(
 		int* new_read_size,
 		int* new_rank,
 		char *data,
-		size_t start_offset_in_file
+		size_t start_offset_in_file,
+		size_t *disc_dup_number
+		);
+
+
+
+void writeSam_any_dim(
+		int dimensions,
+		int rank,
+		char* output_dir,
+		char* header,
+		CHTbl *htblref,
+		CHTbl *htblrg,
+		size_t local_readNum,
+		size_t total_num_read,
+		char* chrName,
+		int total_num_proc,  //this is the number of proc in split communication
+		MPI_Comm split_comm,
+		int master_rank,
+		MPI_Info finfo,
+		int compression_level,
+		size_t* new_offset_dest,
+		size_t* new_offset_source,
+		size_t* new_coordinates_sorted,
+		int* new_read_size,
+		int* new_rank,
+		char *data,
+		size_t start_offset_in_file,
+		skip_list *list
 		);
 
 #endif
