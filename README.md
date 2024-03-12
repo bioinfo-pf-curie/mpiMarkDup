@@ -20,11 +20,11 @@ compatible with samtools.
 The programm markduplicates discordant reads and optical duplicates.
 Discordant reads are also marked in a separates BGZF file.
 example of command lines:
-mpirun numactl --interleave=all  $MPIMD $SAM $OUTPUT -q 0 -d 1000 -v 4
+mpirun numactl --interleave=all  $MPIMD $SAM $OUTPUT -q 0 -d 1000 -v 4 \
 OUTPUT is the output directory \
 d is for optical distance \
 v is for log level \
-q if for quality \
+q if for quality 
 
 ## Contacts
 
