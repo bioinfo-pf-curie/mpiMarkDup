@@ -35,7 +35,16 @@ typedef enum {
 
 typedef struct readInfo {
     
+    size_t fingerprint;    		/**< MD5 of the Qname + number in pair */
+    size_t mate_fingerprint;		/**< finger print of the mate MD5 of the Qname + number in pair */
+    size_t coordPos;                    /**< clipped read position (coordinate in sam file) */
+    size_t unclippedCoordPos;           /**< unclipped read position */
+    size_t coordMatePos;                /**< clipped mate position (coordinate in sam file) */
+    size_t indexAfterSort;              /**< read index in file */
+    size_t mateIndexAfterSort;          /**< mate index in file */
+   
 
+<<<<<<< HEAD
     char *Qname;                            /**< read name, TODO:we don't need to store Qname, we just use it to compte physical location for optical duplicates */
     char *cigar;                            /**< cigar string, TODO:we don't need to store cigar, we just use it to compute unclipped coordinate */
     
@@ -46,6 +55,13 @@ typedef struct readInfo {
     unsigned int check_with_bruck: 2;       /**< the mate is in another buffer we need bruck to check */
     unsigned int external: 1;               /**< it means this read comes from another buffer we don(t mark it as duplicate */
     unsigned int isOpticalDuplicate : 1;    /**< read is optical duplicate ? */
+=======
+    unsigned int d: 1;                    /**< tell if the read is a duplicate */
+    unsigned int checked: 1;              /**< tell the read has already been checked */
+    unsigned int check_with_bruck: 2;     /**< the mate is in another buffer we need bruck to check */
+    unsigned int external: 1;             /**< it means this read comes from another buffer we don(t mark it as duplicate */
+    unsigned int isOpticalDuplicate : 1;  /**< read is optical duplicate ? */
+>>>>>>> master
     unsigned int valueFlag;                   /**< flag of the read */
     unsigned int pair_num;                  /**< tell if the read is first(1) or second in the pair(2) */    
     unsigned int orientation;
@@ -58,6 +74,7 @@ typedef struct readInfo {
     int readChromosome;              /**< read chromosome number */
     int mateChromosome; 
 
+<<<<<<< HEAD
     size_t fingerprint;    /**< MD5 of the Qname + number in pair */
     size_t mate_fingerprint;
     size_t coordPos;                    /**< clipped read position (coordinate in sam file) */
@@ -66,7 +83,12 @@ typedef struct readInfo {
     size_t indexAfterSort;              /**< read index in file */
     size_t mateIndexAfterSort;          /**< mate index in file */
     size_t offset_source_sam;           // offset of the duplicate in the source file 
+=======
+>>>>>>> master
     coord physicalLocation;             /**< read physical location (in QNAME) */
+    char *Qname;                        /**< read name, TODO:we don't need to store Qname, we just use it to compte physical location for optical duplicates */
+    char *cigar;                        /**< cigar string, TODO:we don't need to store cigar, we just use it to compute unclipped coordinate */
+       
     //orientation orientation;            /**< fragment or paired-end orientation (reverse strand + first/second in pair) */
 
 } readInfo;
@@ -80,6 +102,13 @@ typedef struct readInfo {
 
 typedef struct {
 
+    size_t fingerprint;   /**< mate fingerprint */
+    size_t mate_fingerprint;
+    size_t indexAfterSort;
+    size_t unclippedCoordPos;
+    size_t coordPos;
+    size_t coordMatePos;
+
     unsigned int pair_num;
     unsigned int valueFlag;
     unsigned int orientation;
@@ -88,21 +117,18 @@ typedef struct {
     int mateRank;                  /**< mate rank */
     int phredScore;                /**< mate phredScore */
 
-    size_t fingerprint;   /**< mate fingerprint */
-    size_t indexAfterSort;
-    size_t unclippedCoordPos;
-    size_t coordPos;
-    size_t coordMatePos;
+    
     //orientation orientation;
 } mateInfo;
 
 //Coordinate Mate Info
 typedef struct {
     
-    int mateRank;                   /**< mate rank */
-
     size_t coordMatePos;            /**< mate coordinate (PNext) */    
     size_t fingerprint;             /**< mate fingerprint */
+
+    int mateRank;                   /**< mate rank */
+
 } CMInfo;
 
 

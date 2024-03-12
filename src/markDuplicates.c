@@ -627,6 +627,8 @@ readInfo *readParsing (char *sam_buff,
     read->fingerprint = read2Fingerprint(read);
     read->mate_fingerprint = read2mateFP(read);
     assert(read->fingerprint);
+   
+    read->mate_fingerprint = read2mateFP(read);
 
     //read->readLb = 0;
     /*
@@ -1049,6 +1051,7 @@ size_t getMateRankReadSizeBeforeBruck(llist_t *list, mateInfo **mates) {
         if (read->check_with_bruck == 1) {
 
             (*mates)[k].fingerprint = read->fingerprint;
+	    (*mates)[k].mate_fingerprint = read->mate_fingerprint;
             (*mates)[k].readLb = read->readLb;
             (*mates)[k].mateRank = read->mate_rank;
             (*mates)[k].phredScore = read->phred_score;
@@ -1145,7 +1148,9 @@ size_t exchangeAndFillMate_with_Bruck(readInfo ***matesByProc, mateInfo *mates, 
     size_t *snd_mate_coordPos           = malloc(sizeof(size_t) * numberOfReadsToSend);
     size_t *snd_mate_coordMatePos       = malloc(sizeof(size_t) * numberOfReadsToSend);
     size_t *snd_mate_fingerprint        = malloc(sizeof(size_t) * numberOfReadsToSend);
-    
+    size_t *snd_mate_fingerprint2       = malloc(sizeof(size_t) * numberOfReadsToSend);    
+
+
     unsigned int *snd_mate_valueFlag    = malloc(sizeof(unsigned int) * numberOfReadsToSend);
     unsigned int *snd_mate_pair_num     = malloc(sizeof(unsigned int) * numberOfReadsToSend);
     unsigned int *snd_mate_orientation  = malloc(sizeof(unsigned int) * numberOfReadsToSend);
@@ -1163,6 +1168,7 @@ size_t exchangeAndFillMate_with_Bruck(readInfo ***matesByProc, mateInfo *mates, 
         snd_mate_coordPos[m]            = mates[m].coordPos;
         snd_mate_coordMatePos[m]        = mates[m].coordMatePos;
         snd_mate_fingerprint[m]         = mates[m].fingerprint;
+	snd_mate_fingerprint2[m]        = mates[m].mate_fingerprint;
         snd_mate_valueFlag[m]           = mates[m].valueFlag;
         snd_mate_pair_num[m]            = mates[m].pair_num;
         snd_mate_orientation[m]         = mates[m].orientation;
@@ -1171,11 +1177,13 @@ size_t exchangeAndFillMate_with_Bruck(readInfo ***matesByProc, mateInfo *mates, 
     int **rcv_mate_Lb                       = malloc(sizeof(int *) * num_proc);
     int **rcv_mate_Materank                 = malloc(sizeof(int *) * num_proc);
     int **rcv_mate_phredscore               = malloc(sizeof(int *) * num_proc);
+
     size_t **rcv_mate_indexAfterSort        = malloc(sizeof(size_t *) * num_proc);
     size_t **rcv_mate_unclippedCoordPos     = malloc(sizeof(size_t *) * num_proc);
     size_t **rcv_mate_coordPos              = malloc(sizeof(size_t *) * num_proc);
     size_t **rcv_mate_coordMatePos          = malloc(sizeof(size_t *) * num_proc);
     size_t **rcv_mate_fingerprint           = malloc(sizeof(size_t *) * num_proc);
+    size_t **rcv_mate_fingerprint2          = malloc(sizeof(size_t *) * num_proc);
 
     unsigned int **rcv_mate_valueFlag       = malloc(sizeof(unsigned int *) * num_proc);
     unsigned int **rcv_mate_pair_num        = malloc(sizeof(unsigned int *) * num_proc);
@@ -1206,6 +1214,8 @@ size_t exchangeAndFillMate_with_Bruck(readInfo ***matesByProc, mateInfo *mates, 
                     &rcv_mate_coordMatePos,
                     snd_mate_fingerprint,
                     &rcv_mate_fingerprint,
+		    snd_mate_fingerprint2,
+                    &rcv_mate_fingerprint2,
                     snd_mate_valueFlag,
                     &rcv_mate_valueFlag,
                     snd_mate_pair_num,
@@ -1240,6 +1250,7 @@ size_t exchangeAndFillMate_with_Bruck(readInfo ***matesByProc, mateInfo *mates, 
             mate[k].cigar = NULL;
 
             // Conversion of others fields
+<<<<<<< HEAD:src/markDuplicates.c
             mate[k].fingerprint           = rcv_mate_fingerprint[n][k];
             mate[k].readLb                = rcv_mate_Lb[n][k];
             mate[k].mate_rank             = rcv_mate_Materank[n][k];
@@ -1251,6 +1262,20 @@ size_t exchangeAndFillMate_with_Bruck(readInfo ***matesByProc, mateInfo *mates, 
             mate[k].orientation           = rcv_mate_orientation[n][k];
             mate[k].valueFlag             = rcv_mate_valueFlag[n][k];
             mate[k].pair_num              = rcv_mate_pair_num[n][k];
+=======
+            mate->fingerprint           = rcv_mate_fingerprint[n][k];
+	    mate->mate_fingerprint      = rcv_mate_fingerprint2[n][k];
+            mate->readLb                = rcv_mate_Lb[n][k];
+            mate->mate_rank             = rcv_mate_Materank[n][k];
+            mate->phred_score           = rcv_mate_phredscore[n][k];
+            mate->indexAfterSort        = rcv_mate_indexAfterSort[n][k];
+            mate->unclippedCoordPos     = rcv_mate_unclippedCoordPos[n][k];
+            mate->coordPos              = rcv_mate_coordPos[n][k];
+            mate->coordMatePos          = rcv_mate_coordMatePos[n][k];
+            mate->orientation           = rcv_mate_orientation[n][k];
+            mate->valueFlag             = rcv_mate_valueFlag[n][k];
+            mate->pair_num              = rcv_mate_pair_num[n][k];
+>>>>>>> master:src/mark_duplicates.c
             // These mates are external and not checked.
             mate[k].external = 1;
             mate[k].checked = 0;
@@ -1269,10 +1294,10 @@ size_t exchangeAndFillMate_with_Bruck(readInfo ***matesByProc, mateInfo *mates, 
     for (n = 0; n < num_proc; n++)  if (rcv_mate_coordPos[n])           free(rcv_mate_coordPos[n]);
     for (n = 0; n < num_proc; n++)  if (rcv_mate_coordMatePos[n])       free(rcv_mate_coordMatePos[n]);
     for (n = 0; n < num_proc; n++)  if (rcv_mate_fingerprint[n])        free(rcv_mate_fingerprint[n]);
+    for (n = 0; n < num_proc; n++)  if (rcv_mate_fingerprint2[n])       free(rcv_mate_fingerprint2[n]);
     for (n = 0; n < num_proc; n++)  if (rcv_mate_valueFlag[n])          free(rcv_mate_valueFlag[n]);
     for (n = 0; n < num_proc; n++)  if (rcv_mate_pair_num[n])           free(rcv_mate_pair_num[n]);
     for (n = 0; n < num_proc; n++)  if (rcv_mate_orientation[n])        free(rcv_mate_orientation[n]);
-    
 
     if (rcv_mate_Lb)                free(rcv_mate_Lb);
     if (rcv_mate_Materank)          free(rcv_mate_Materank);
@@ -1282,11 +1307,11 @@ size_t exchangeAndFillMate_with_Bruck(readInfo ***matesByProc, mateInfo *mates, 
     if (rcv_mate_coordPos)          free(rcv_mate_coordPos);
     if (rcv_mate_coordMatePos)      free(rcv_mate_coordMatePos);
     if (rcv_mate_fingerprint)       free(rcv_mate_fingerprint);
+    if (rcv_mate_fingerprint2)      free(rcv_mate_fingerprint2);
     if (rcv_mate_valueFlag)         free(rcv_mate_valueFlag);
     if (rcv_mate_pair_num)          free(rcv_mate_pair_num);
     if (rcv_mate_orientation)       free(rcv_mate_orientation);
     
-
     free(snd_mate_Lb);
     free(mate_dest_rank);
     free(snd_mate_Materank);
@@ -1296,11 +1321,11 @@ size_t exchangeAndFillMate_with_Bruck(readInfo ***matesByProc, mateInfo *mates, 
     free(snd_mate_coordPos);
     free(snd_mate_coordMatePos);
     free(snd_mate_fingerprint);
+    free(snd_mate_fingerprint2);
     free(snd_mate_valueFlag);
     free(snd_mate_pair_num);
     free(snd_mate_orientation);    
     free(number_of_mates_by_procs);
-
     
     return index;
 }
@@ -2278,14 +2303,13 @@ void exchangeExternFrag(llist_t *fragList,
     mateInfo *mates = malloc(numberOfExternalMate * sizeof(mateInfo));
     size_t actualNumberToSend = getMateRankReadSizeBeforeBruck(fragList, &mates);
 
+    double timeStamp, timeStart = 0;
     assert(actualNumberToSend == numberOfExternalMate);
-
     /* Sort mates to send  by mate rank */
     qsort(mates, numberOfExternalMate, sizeof(mateInfo), cmpMateRank);
-
-
     /* Exchange mates and fill them to a readInfo array */
     readInfo **matesByProc;
+
     //int totalrecv = exchangeAndFillMate(&matesByProc, mates, numberOfExternalMate, comm);
     size_t totalrecv = exchangeAndFillMate_with_Bruck(&matesByProc, mates, numberOfExternalMate, comm);
     md_log_rank_debug(rank, "[mpiMD][exchangeExternFrag] Received %zu mates, fragList size = %d\n", totalrecv, fragList->size);
@@ -2313,10 +2337,13 @@ void exchangeExternFrag(llist_t *fragList,
     }    
     */
 
-
     int mateCounter = 0;
     for (size_t i = 0; i < totalrecv; i++) {
+<<<<<<< HEAD:src/markDuplicates.c
         
+=======
+
+>>>>>>> master:src/mark_duplicates.c
         readInfo *mate = getReadFromFingerprint(htbl, matesByProc[i]->fingerprint);
         //assert( (mate->pair_num == 1) || (mate->pair_num == 2));
         /* Only external mate of the current buffer has a slot in hash table.
@@ -2348,6 +2375,7 @@ void exchangeExternFrag(llist_t *fragList,
             /* insert external mate, it is partially filled as a readInfo */
             hashTableInsert(htbl, matesByProc[i]);
 
+<<<<<<< HEAD:src/markDuplicates.c
             /* insert mate in fragments list and readEnds list (if we can construct pair) 
              * TODO: To optimize :
              *  - mate distribution among process may be unbalanced 
@@ -2383,9 +2411,21 @@ void exchangeExternFrag(llist_t *fragList,
                     }
                 }
             }
+=======
+           //fprintf(stderr,"rank = %d :::  matesByProc[i]->mate_fingerprint %zu ::: matesByProc[i]->fingerprint %zu \n", rank, matesByProc[i]->mate_fingerprint, matesByProc[i]->fingerprint);
+    	   readInfo *read = getReadFromFingerprint(htbl, matesByProc[i]->mate_fingerprint);
+    	   assert(read);
+    	   buildReadEnds(matesByProc[i], read, readEndsList );    
+    	   insertReadInList(fragList, matesByProc[i]) ;
+    	   matesByProc[i]->Qname = strdup(read->Qname);
+    	   assert( (matesByProc[i]->pair_num == 1) || (matesByProc[i]->pair_num == 2));
+    	   mateCounter++;
+    	   //break;
+          
+>>>>>>> master:src/mark_duplicates.c
         }
     }
-
+    
     md_log_rank_trace(rank, "Found %d/%d mates\n", mateCounter, totalrecv);
 
     /*
@@ -2620,6 +2660,67 @@ char *markDuplicate (char *bufferReads,
     	//md_set_log_comm(previousComm);
 	//MPI_Comm_free(&comm);
     }
+<<<<<<< HEAD:src/markDuplicates.c
+=======
+
+    md_log_debug("Finished to exchange mate in %f seconds\n", MPI_Wtime() - timeStamp);
+
+    md_log_debug("Start to sort fragments list and read ends list ...\n");
+    timeStamp = MPI_Wtime();
+
+    /* Sort lists using merge sort.
+     * We use merge sort instead of insertion sort because
+     * insertion sort is too slow in discordant case.
+     * TODO: If this merge sort work fine, replace insertReadInList() by
+     *       llist_append() in all occurrences.
+     * */
+    llist_merge_sort(fragList, 1);
+    llist_merge_sort(readEndsList, 0);
+ 
+    md_log_debug("Finished to sort list in %f seconds\n", MPI_Wtime() - timeStamp);
+
+    md_log_info("Start to find duplicate ...\n");
+    timeStamp = MPI_Wtime();
+    int localDuplicates = 0, localOpticalDuplicates = 0, totalDuplicates = 0, totalOpticalDuplicates = 0;
+    
+    findDuplica(fragList, readEndsList, htbl, &localDuplicates, &localOpticalDuplicates, comm) ;
+    
+
+
+    md_log_info("Finished to find duplicates in %f seconds\n", totalDuplicates, totalOpticalDuplicates,  MPI_Wtime() - timeStamp);
+    md_log_info("Gather duplicates results ...\n");
+    
+    timeStamp = MPI_Wtime();
+    
+    //MPI_Barrier(comm);
+    MPI_Reduce(&localDuplicates, &totalDuplicates, 1, MPI_INT, MPI_SUM, 0, comm);
+    MPI_Reduce(&localOpticalDuplicates, &totalOpticalDuplicates, 1, MPI_INT, MPI_SUM, 0, comm);
+    md_log_info("Found %d duplicates and %d optical duplicates in %f seconds\n", totalDuplicates, totalOpticalDuplicates,  MPI_Wtime() - timeStamp);
+
+    md_log_debug("Start to write marked buffer...\n");
+    timeStamp = MPI_Wtime();
+    char *newBuff = writeBuff(samTokenLines, readArr, readNum);
+    md_log_debug("Finished to mark buffer %f seconds\n", MPI_Wtime() - timeStamp);
+
+    md_log_debug("Free data structures ...\n");
+    timeStamp = MPI_Wtime();
+    free(samTokenLines);
+    /* free all reads and fragList */
+    llist_destruct(fragList);
+    /* free all nodes of readEndsList */
+    llist_clear(readEndsList);
+    /* free readEndsList */
+    llist_destruct(readEndsList);
+    free(intervalByProc);
+    free(readNumByProc);
+    free(readArr);
+    freeChrInfo(&chr);
+    freeLbInfo(&lb);
+
+    hashTableDestroy(htbl);
+    md_log_trace("Finished to free data structures %f seconds\n", MPI_Wtime() - timeStamp);
+    md_log_debug("End to mark duplicates %f seconds\n", MPI_Wtime() - timeStart);
+>>>>>>> master:src/mark_duplicates.c
     md_set_log_comm(previousComm);
     MPI_Comm_free(&comm);
     return newBuff;
