@@ -14,7 +14,7 @@ This software allows the sorting and the marking of duplicates reads for high-th
 The programm sorts and markduplicates SAM files. \
 The programm needs a power of two number of cores. \
 The SAM files must contain read group. \
-This programm has only been tested for short reads and upon whole genome. \
+This programm has only been tested for short pair-end reads and upon whole genome. \
 Its better if duplicates are balanced along the the entire genome. \
 The total memory needed is approximately 2 times the SAM file size. \
 It produces BGZF files for each chromosome present in the header and are
