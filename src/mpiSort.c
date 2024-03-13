@@ -347,7 +347,7 @@ int main (int argc, char *argv[]) {
         assert(y != NULL);
         z = y + 3; //adress's position y + 3
         while (*z && !isspace((unsigned char)*z)) z++;
-        rgNames[nbrg] = strndup(y + 3, z - y - 3); //recover only (z-y-3) of (y + 3)
+        rgNames[nbrg++] = strndup(y + 3, z - y - 3); //recover only (z-y-3) of (y + 3)
         assert(nbrg < MAXNBCHR - 2);
     }
 
