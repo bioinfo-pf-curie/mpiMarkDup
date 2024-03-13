@@ -13,7 +13,8 @@ This software allows the sorting and the marking of duplicates reads for high-th
 
 The programm sorts and markduplicates SAM files. \
 The programm needs a power of two number of cores. \
-The SAM files must contain read group. \
+The SAM files must contain at least one read group. \
+The SAM files must have fix mate information. \ 
 This programm has only been tested for short pair-end reads and upon whole genome. \
 Its better if duplicates are balanced along the the entire genome. \
 The total memory needed is approximately 2 times the SAM file size. \
