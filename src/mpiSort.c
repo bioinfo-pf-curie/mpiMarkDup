@@ -56,7 +56,7 @@
 #include "sortAnyDim.h"
 #include "mpiSortUtils.h"
 #include "writeUtils.h"
-#include "qksort.h"
+#include "mergeSort.h"
 #include "parallelBitonicSort2.h"
 #include "parallelBitonicSort3.h"
 #include "log.h"
@@ -357,7 +357,6 @@ int main (int argc, char *argv[]) {
 
     //populate hash table for read group
     for(i = 0; i < (nbrg); i++){
-        //fprintf(stderr, "rank %d ::: call htable insert for %s \n", rank, chrNames[i]);
         if (chtbl_insert(&rg_htbl, rgNames[i], i)  != 0)
         return 1;
     }
@@ -1132,7 +1131,8 @@ int main (int argc, char *argv[]) {
 
                 //A QUOI SERT qksort
 
-                qksort(coord_index, local_readNum, 0, local_readNum - 1, compare_size_t);
+		MergeSortMain(coord_index, local_readNum);
+                //qksort(coord_index, , 0, local_readNum - 1, compare_size_t);
                 //It looks like qksort inverts the values in coord_index
 
                 //if (split_rank == chosen_split_rank) {

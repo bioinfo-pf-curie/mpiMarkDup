@@ -19,3 +19,5 @@ mpiSortHDR = mpiSortUtils.h mergeSort.h parallelBitonicSort.h \
 	compat.h  
 
 AM_CFLAGS= -g -O2 -Wall -Wextra -std=gnu99 
+#AM_CFLAGS= -g -O2
+#AM_LDFLAGS=--coverage
