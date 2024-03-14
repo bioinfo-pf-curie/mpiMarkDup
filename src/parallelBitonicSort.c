@@ -60,7 +60,7 @@
 #include <malloc.h>
 
 #include "compat.h"
-
+#include "mergeSort.h"
 #include "parallelBitonicSort.h"
 #include "parallelBitonicSort2.h"
 
@@ -89,19 +89,6 @@ static int compare_size_t_V2(const void *a, const void *b){
 	else
 		return 0;
 
-}
-
-static int compare_size_t(const void *a, const void *b){
-
-	 size_t aa = *(size_t *)a, bb = *(size_t *)b;
-	 //fprintf(stderr, "rank %d :::::[MPIBITONIC2] we call parallel bitonic sort \n", split_rank);
-
-	 if (base_arr2[aa] > base_arr2[bb])
-		return 1;
-	else if (base_arr2[aa] < base_arr2[bb])
-		return -1;
-	else
-		return 0;
 }
 
 
@@ -195,7 +182,8 @@ void Local_sort(
 	}
 
 	base_arr2 = local_keys;
-	bitonic_qksort(index_vector, list_size, 0, list_size - 1, compare_size_t);
+	MergeSortMain(index_vector, list_size);
+	//bitonic_qksort(index_vector, list_size, 0, list_size - 1, compare_size_t);
 
 	//then we apply loac index to local_keys
 	for(j = 0; j < list_size; j++){
