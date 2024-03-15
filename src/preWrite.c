@@ -41,33 +41,6 @@
 #include "writeUtils.h"
 #include "parser.h"
 
-void preWrite(Read* chr, size_t readNum, char** data, int* size){
-	size_t j;
-	size_t k=0;
-	size_t dataSize=0;
-	char* s;
-	void* tmp;
-
-	for(j = 0; j < readNum; j++){
-
-		size[j] = strlen(chr->string);
-		dataSize += size[j];
-		s = chr->string;
-
-		*data = (char*)realloc(data, (dataSize+1)*sizeof(char));
-
-		while(*s){
-			(*data)[k++] = *s++;
-		}
-
-		free(chr->string);
-		tmp = chr;
-		chr = chr->next;
-		free(tmp);
-	}
-	(*data)[k] = 0;
-}
-
 MPI_Offset startOffset(int rank, int num_proc, size_t blockSize, size_t headerSize, MPI_Comm comm){
 	size_t delay = 0;
 	MPI_Offset offset = headerSize;
