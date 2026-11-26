@@ -1,6 +1,6 @@
 # Process this file with autoconf to produce a configure script.
 AC_PREREQ([2.69])
-AC_INIT([mpimd], [1.0])
+AC_INIT([mpimd], [1.2])
 
 #for install-sh, depcomp,...
 AC_CONFIG_AUX_DIR([build-aux])
