@@ -32,7 +32,7 @@
 
 #include <stdio.h>
 
-#include "mpiMD_utils.h"
+#include "mpiMarkDuplicatesUtils.h"
 
 /**
  * @date 2018/02/19
@@ -51,8 +51,7 @@
 
 
 static int getLine_setup(void **state) {
-    char *str = malloc (sizeof(char) * (strlen(TEXT)));
-    str = strdup(TEXT);
+    char *str = strdup(TEXT);
     *state = str;
     return 0;
 }
@@ -67,73 +66,38 @@ static int getLine_teardown(void **state) {
 static void getLine_ptr(void **state) {
     char *str  = *state, *tok, *offset = str;
     assert_string_equal (str, TEXT);
-    getLine(&offset, str, &tok);
+    getLine(&offset, &tok);
     assert_string_equal(tok, "Mademoiselle Baptistine's ambition had been to be able to\n");
     free(tok);
-    getLine(&offset, str, &tok);
+    getLine(&offset, &tok);
     assert_string_equal(tok, "purchase a set of drawing-room furniture in yellow Utrecht vel-\n");
     free(tok);
-    getLine(&offset, str, &tok);
+    getLine(&offset, &tok);
     assert_string_equal(tok, "vet, stamped with a rose pattern, and with mahogany in swan's-\n");
     free(tok);
-    getLine(&offset, str, &tok);
+    getLine(&offset, &tok);
     assert_string_equal(tok, "neck style, with a sofa.\n");
     free(tok);
-    getLine(&offset, str, &tok);
+    getLine(&offset, &tok);
     assert_null(tok);
 }
 
 /* Test return value (length of token) */
 static void getLine_size(void **state) {
     char *str  = *state, *tok, *offset = str;
-    assert_int_equal(getLine(&offset, str, &tok), strlen("Mademoiselle Baptistine's ambition had been to be able to"));
+    assert_int_equal(getLine(&offset, &tok), strlen("Mademoiselle Baptistine's ambition had been to be able to"));
     free(tok);
-    assert_int_equal(getLine(&offset, str, &tok), strlen("purchase a set of drawing-room furniture in yellow Utrecht vel-"));
+    assert_int_equal(getLine(&offset, &tok), strlen("purchase a set of drawing-room furniture in yellow Utrecht vel-"));
     free(tok);
-    assert_int_equal(getLine(&offset, str, &tok), strlen("vet, stamped with a rose pattern, and with mahogany in swan's-"));
+    assert_int_equal(getLine(&offset, &tok), strlen("vet, stamped with a rose pattern, and with mahogany in swan's-"));
     free(tok);
-    assert_int_equal(getLine(&offset, str, &tok), strlen("neck style, with a sofa."));
+    assert_int_equal(getLine(&offset, &tok), strlen("neck style, with a sofa."));
     free(tok);
-    assert_int_equal(getLine(&offset, str, &tok), 0);
+    assert_int_equal(getLine(&offset, &tok), 0);
 }
-
-static int getReadTagValue_setup(void **state) {
-    char *str = strdup("test");
-    *state = str;
-    return 0;
-}
-
-static int getReadTagValue_teardown(void **state) {
-    char **str = *state;
-    free(*str);
-    return 0;
-}
-
-char *getReadTagValue(char *token, const char *tag) {
-
-    char *substr = strstr(token, tag);
-
-    if (substr) {
-        char *p = substr + strlen(tag);
-        return strndup(p, strlen(p));
-
-    } else {
-        return NULL;
-    }
-}
-
-void getReadTagValue_ptr(void **state) {
-    char **str = *state;
-    char *tok = strdup("AA:Z:value");
-    *str = getReadTagValue(tok, "AA:Z:");
-    assert_string_equal(*str, "value");
-    free(tok);
-}
-
 
 static int getTokenTab_setup(void **state) {
-    char *str = malloc (sizeof(char) * (strlen(TEXT)));
-    str = strdup(TEXT_TAB);
+    char *str = strdup(TEXT_TAB);
     *state = str;
     return 0;
 }
@@ -147,37 +111,38 @@ static int getTokenTab_teardown(void **state) {
 static void getTokenTab_ptr(void **state) {
     char *str  = *state, *tok, *offset = str;
     assert_string_equal (str, TEXT_TAB);
-    getTokenTab(&offset, str, &tok);
+    getTokenTab(&offset, &tok);
     assert_string_equal(tok, "HISEQ:001:001");
     free(tok);
-    getTokenTab(&offset, str, &tok);
+    getTokenTab(&offset, &tok);
     assert_string_equal(tok, "99");
     free(tok);
-    getTokenTab(&offset, str, &tok);
+    getTokenTab(&offset, &tok);
     assert_string_equal(tok, "chr1");
     free(tok);
-    getTokenTab(&offset, str, &tok);
+    getTokenTab(&offset, &tok);
     assert_string_equal(tok, "10000");
     free(tok);
-    getTokenTab(&offset, str, &tok);
+    getTokenTab(&offset, &tok);
     assert_null(tok);
 }
 
 /* Test return value (length of token) */
 static void getTokenTab_size(void **state) {
     char *str  = *state, *tok, *offset = str;
-    assert_int_equal(getTokenTab(&offset, str, &tok), strlen("HISEQ:001:001"));
+    assert_int_equal(getTokenTab(&offset, &tok), strlen("HISEQ:001:001"));
     free(tok);
-    assert_int_equal(getTokenTab(&offset, str, &tok), strlen("99"));
+    assert_int_equal(getTokenTab(&offset, &tok), strlen("99"));
     free(tok);
-    assert_int_equal(getTokenTab(&offset, str, &tok), strlen("chr1"));
+    assert_int_equal(getTokenTab(&offset, &tok), strlen("chr1"));
     free(tok);
-    assert_int_equal(getTokenTab(&offset, str, &tok), strlen("10000"));
+    assert_int_equal(getTokenTab(&offset, &tok), strlen("10000"));
     free(tok);
-    assert_int_equal(getTokenTab(&offset, str, &tok), 0);
+    assert_int_equal(getTokenTab(&offset, &tok), 0);
 }
 
 static void readBits_correctness(void** state){
+    (void)state;
     assert_int_equal(readBits(99, 5), 1);
     assert_int_equal(readBits(99, 6), 1);
     assert_int_equal(readBits(99, 7), 0);
@@ -185,6 +150,7 @@ static void readBits_correctness(void** state){
 }
 
 static void fastQToPhred_correctness(void** state){
+    (void)state;
     assert_int_equal(fastqToPhred('D'),35);
 }
 
@@ -195,29 +161,23 @@ int main(void) {
         cmocka_unit_test_setup_teardown(getLine_ptr, getLine_setup, getLine_teardown),
         cmocka_unit_test_setup_teardown(getLine_size, getLine_setup, getLine_teardown),
     };
-    cmocka_run_group_tests(TestgetLine, NULL, NULL);
-
-    const struct CMUnitTest TestgetReadTagValue[] = {
-        cmocka_unit_test_setup_teardown(getReadTagValue_ptr,  getReadTagValue_setup, getReadTagValue_teardown),
-        //cmocka_unit_test_setup_teardown(getReadTagValue_size, getReadTagValue_setup, getReadTagValue_teardown),
-    };
-    cmocka_run_group_tests(TestgetReadTagValue, NULL, NULL);
+    int failures = cmocka_run_group_tests(TestgetLine, NULL, NULL);
 
     const struct CMUnitTest TestgetTokenTab[] = {
         cmocka_unit_test_setup_teardown(getTokenTab_ptr, getTokenTab_setup, getTokenTab_teardown),
         cmocka_unit_test_setup_teardown(getTokenTab_size, getTokenTab_setup, getTokenTab_teardown),
     };
-    cmocka_run_group_tests(TestgetTokenTab, NULL, NULL);
+    failures += cmocka_run_group_tests(TestgetTokenTab, NULL, NULL);
 
     const struct CMUnitTest TestreadBits[] = {
         cmocka_unit_test_setup_teardown(readBits_correctness, NULL, NULL),
     };
 
-    cmocka_run_group_tests(TestreadBits, NULL, NULL);
+    failures += cmocka_run_group_tests(TestreadBits, NULL, NULL);
 
     const struct CMUnitTest TestFastQToPhred[] = {
         cmocka_unit_test_setup_teardown(fastQToPhred_correctness, NULL, NULL),
     };
-    cmocka_run_group_tests(TestFastQToPhred, NULL, NULL);
-    return 0;
+    failures += cmocka_run_group_tests(TestFastQToPhred, NULL, NULL);
+    return failures ? 1 : 0;
 }

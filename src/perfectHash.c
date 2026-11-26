@@ -22,6 +22,7 @@
 */
 
 #include "perfectHash.h"
+#include <openssl/evp.h>
 
 /**
  *   @date 2018 Feb 26
@@ -155,19 +156,22 @@ static size_t getPrimeGT(size_t m) {
  *   @brief convert a string to a 64 bits MD5.
  *   @param str the string to convert
  *   @return the associated 64bits MD5
- *   @note This function depend on openssl/md5.h
+ *   @note This function depends on OpenSSL's EVP digest API.
  *   @note It is possible that 64bits fingerprint is not sufficient when we
  *         scale, should modify it and all fingerprint occurrence.
  */
 
 size_t string2MD5(const char *str) {
-    unsigned char digest[MD5_DIGEST_LENGTH];
-    MD5_CTX context;
-    MD5_Init(&context);
-    MD5_Update(&context, str, strlen(str));
-    MD5_Final(digest, &context);
-    size_t a = *(size_t *)digest;
-    size_t b = *(size_t *)(digest + 8);
+    unsigned char digest[EVP_MAX_MD_SIZE];
+    unsigned int digest_len = 0;
+    if (EVP_Digest(str, strlen(str), digest, &digest_len, EVP_md5(), NULL) != 1 ||
+        digest_len != 16) {
+        fprintf(stderr, "Unable to compute MD5 fingerprint with OpenSSL EVP\n");
+        abort();
+    }
+    size_t a, b;
+    memcpy(&a, digest, sizeof(a));
+    memcpy(&b, digest + 8, sizeof(b));
     // XOR them to get a shorter fingerprint 
     return a ^ b;
 }
@@ -326,6 +330,53 @@ int haveCollision(hashParam hp, int prime, size_t *arr, size_t size) {
 
     free(count);
     return flag;
+}
+
+static int compareFingerprintKeys(const void *a, const void *b) {
+    const readInfo *left = *(readInfo * const *)a;
+    const readInfo *right = *(readInfo * const *)b;
+    if (left->fingerprint < right->fingerprint) return -1;
+    if (left->fingerprint > right->fingerprint) return 1;
+    int names = strcmp(left->Qname, right->Qname);
+    if (names) return names;
+    return (left->pair_num > right->pair_num) - (left->pair_num < right->pair_num);
+}
+
+/* Detect distinct keys with the same fingerprint in one rank's input. */
+int findFingerprintCollision(readInfo **arr, size_t size,
+                             const readInfo **first, const readInfo **second) {
+    *first = NULL;
+    *second = NULL;
+    if (size == 0) return 0;
+    readInfo **sorted = malloc(size * sizeof(*sorted));
+    if (!sorted) {
+        fprintf(stderr, "Unable to allocate memory for fingerprint collision check\n");
+        return -1;
+    }
+    size_t count = 0;
+    for (size_t i = 0; i < size; i++) {
+        if (arr[i]) {
+            if (!arr[i]->Qname) {
+                fprintf(stderr, "Cannot check fingerprint collision: read has no QNAME\n");
+                free(sorted);
+                return -1;
+            }
+            sorted[count++] = arr[i];
+        }
+    }
+    qsort(sorted, count, sizeof(*sorted), compareFingerprintKeys);
+    for (size_t i = 1; i < count; i++) {
+        if (sorted[i - 1]->fingerprint == sorted[i]->fingerprint &&
+            (sorted[i - 1]->pair_num != sorted[i]->pair_num ||
+             strcmp(sorted[i - 1]->Qname, sorted[i]->Qname) != 0)) {
+            *first = sorted[i - 1];
+            *second = sorted[i];
+            free(sorted);
+            return 1;
+        }
+    }
+    free(sorted);
+    return 0;
 }
 
 /**
@@ -666,6 +717,17 @@ void shareHpAndConstructHtbl(hashTable *htbl, readInfo **arr, size_t size, MPI_C
     int rank, numprocs;
     MPI_Comm_rank(comm, &rank);
     MPI_Comm_size(comm, &numprocs);
+    const readInfo *first, *second;
+    int collision = findFingerprintCollision(arr, size, &first, &second);
+    if (collision == 1) {
+        fprintf(stderr, "Rank %d: fingerprint collision %zu between %s/%u and %s/%u\n",
+                rank, first->fingerprint, first->Qname, first->pair_num,
+                second->Qname, second->pair_num);
+    }
+    int local_error = collision != 0;
+    int any_error = 0;
+    MPI_Allreduce(&local_error, &any_error, 1, MPI_INT, MPI_MAX, comm);
+    if (any_error) MPI_Abort(comm, EXIT_FAILURE);
     hashParam  hp ;
     int maxSize = 0;
     size_t i;
@@ -713,6 +775,4 @@ void shareHpAndConstructHtbl(hashTable *htbl, readInfo **arr, size_t size, MPI_C
 
     //MPI_Type_free(&hp_type);
 }
-
-
 

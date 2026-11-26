@@ -21,7 +21,7 @@ typedef struct {
 } test_t;
 
 static void initRead(readInfo **read, int n) {
-    (*read) = malloc(sizeof(readInfo));
+    (*read) = calloc(1, sizeof(readInfo));
     (*read)->readLb = 0;
     asprintf(&(*read)->Qname, "Qname-%d", n);
     (*read)->cigar   = strdup("cigar");
@@ -205,7 +205,7 @@ int main(void) {
         cmocka_unit_test_setup_teardown(llistPtr_DeleteRead, llist_setup, llist_teardown),
     };
 
-    cmocka_run_group_tests(llistPtr, NULL, NULL);
-    cmocka_run_group_tests(llistSize, NULL, NULL);
-    return 0;
+    int failures = cmocka_run_group_tests(llistPtr, NULL, NULL);
+    failures += cmocka_run_group_tests(llistSize, NULL, NULL);
+    return failures ? 1 : 0;
 }

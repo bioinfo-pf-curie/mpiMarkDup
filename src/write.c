@@ -1759,6 +1759,7 @@ void writeSam(
 
     	MPI_File_set_view(out, write_offset, MPI_BYTE, MPI_BYTE, "native", finfo);
     	MPI_File_write_all(out, compressed_buff, (size_t)compSize, MPI_BYTE, &status);
+        MPI_Barrier(newcomm);
 
     	//task FINE TUNING FINFO BACK TO READING OPERATIONS
     	//MPI_Info_set(finfo,"striping_factor","12");
@@ -2862,6 +2863,7 @@ size_t * writeSam_discordant(
 
     	MPI_File_set_view(out, write_offset, MPI_BYTE, MPI_BYTE, "native", finfo);
     	MPI_File_write_all(out, compressed_buff, (size_t)compSize, MPI_BYTE, &status);
+        MPI_Barrier(newcomm);
 
     	//task FINE TUNING FINFO BACK TO READING OPERATIONS
     	//MPI_Info_set(finfo,"striping_factor","12");
@@ -3273,7 +3275,9 @@ void writeSam_unmapped(
 
     //fprintf(stderr, "Rank %d :::::[WRITE] call file_write\n", split_rank);
     MPI_File_write(out, char_buff_compressed, (size_t)compressed_size, MPI_BYTE, &status);
-    /*
+    /* Every rank must finish writing before rank 0 determines the file end. */
+    MPI_Barrier(split_comm);
+
     if (split_rank == 0 ) {
         
         static uint8_t magic[28] = "\037\213\010\4\0\0\0\0\0\377\6\0\102\103\2\0\033\0\3\0\0\0\0\0\0\0\0\0";
@@ -3281,7 +3285,6 @@ void writeSam_unmapped(
         MPI_File_seek(out, 0, MPI_SEEK_END);
         MPI_File_write(out, magic, 28, MPI_BYTE, MPI_STATUS_IGNORE);
     }
-    */
     MPI_Barrier(split_comm);
 
 
@@ -7531,7 +7534,6 @@ size_t *writeSam_any_dim_discordant(
 
 
 }
-
 
 
 
