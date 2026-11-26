@@ -45,13 +45,13 @@ typedef struct {
 } test_t;
 
 static readInfo *readsInit(int i, int pairNumber) {
-    readInfo* r = malloc(sizeof(readInfo));
+    readInfo* r = calloc(1, sizeof(readInfo));
     char *str = malloc(sizeof(char) * 100);
     sprintf(str, "QName-%04d", i);
     r->cigar = NULL;
-    r->lb_name = NULL;
     r->Qname = str;
     r->valueFlag = 64 * pairNumber;
+    r->pair_num = pairNumber;
     r->fingerprint = read2Fingerprint(r);
     return r;
 }
@@ -169,17 +169,37 @@ static void PH_insert(void **state) {
     readInfo** reads = test->reads;
     hashTable* htbl = test->htbl;
 
-    unsigned long long fingerprint;
     readInfo* r1, *r2;
 
     /** Test hashTableInsert **/
     // insert in the same place, so free first
     freeRead(reads[0]);
     r1 = readsInit(0, 1);
+    reads[0] = r1;
     hashTableInsert(htbl, r1);
     r2 = getReadFromQnameAndPairNum(htbl, "QName-0000", 1);
     assert_ptr_equal(r1, r2);
         
+}
+
+static void PH_known_digests(void **state) {
+    (void)state;
+    static const struct {
+        const char *input;
+        unsigned char digest[16];
+    } vectors[] = {
+        {"", {0xd4, 0x1d, 0x8c, 0xd9, 0x8f, 0x00, 0xb2, 0x04,
+              0xe9, 0x80, 0x09, 0x98, 0xec, 0xf8, 0x42, 0x7e}},
+        {"abc", {0x90, 0x01, 0x50, 0x98, 0x3c, 0xd2, 0x4f, 0xb0,
+                 0xd6, 0x96, 0x3f, 0x7d, 0x28, 0xe1, 0x7f, 0x72}},
+    };
+
+    for (size_t i = 0; i < sizeof(vectors) / sizeof(vectors[0]); i++) {
+        size_t a, b;
+        memcpy(&a, vectors[i].digest, sizeof(a));
+        memcpy(&b, vectors[i].digest + 8, sizeof(b));
+        assert_int_equal(string2MD5(vectors[i].input), a ^ b);
+    }
 }
 
 int main(void) {
@@ -188,7 +208,7 @@ int main(void) {
         cmocka_unit_test_setup_teardown(PH_getElement, PH_setup, PH_teardown),
         cmocka_unit_test_setup_teardown(PH_conversion, PH_setup, PH_teardown),
         cmocka_unit_test_setup_teardown(PH_insert, PH_setup, PH_teardown),
+        cmocka_unit_test(PH_known_digests),
     };
-    cmocka_run_group_tests(PHPtr, NULL, NULL);
-    return 0;
+    return cmocka_run_group_tests(PHPtr, NULL, NULL);
 }

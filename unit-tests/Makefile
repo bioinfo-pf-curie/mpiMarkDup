@@ -1,52 +1,26 @@
-# Author : Firmin Martin
-# Last update : 2018 Apr. 1
-# Description : Makefile to launch unit tests.
+CC = mpicc
+SRC = ../src
+CPPFLAGS += -I$(SRC) -D_GNU_SOURCE
+CFLAGS ?= -g -O2 -Wall -Wextra -std=gnu99
+LDLIBS += -lcmocka -lcrypto -lm
 
-CC=gcc
-SRC=../src
-INC=-I$(SRC)
-# use cmocka for unit testing
-LB=-lcmocka -lmpi -lm
-# --coverage for lcov
-CFLAGS=-g --coverage
+BIN = TestUtils TestPerfectHash TestLlist
+COMMON = $(SRC)/log.c $(SRC)/mpiMarkDuplicatesUtils.c
 
-BIN= TestUtils TestPerfectHash TestList TestLBList
-# required lcov
-COV=lcov --capture --directory . --output-file coverage.info -q
-GEN_HTML=genhtml coverage.info --output-directory
+.PHONY: all check clean
+all: $(BIN)
 
-all: post
+check: all
+	@set -e; for test in $(BIN); do ./$$test; done
 
-pre: 
-	$(MAKE) clean
+TestUtils: TestUtils.c $(COMMON)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $^ $(LDFLAGS) $(LDLIBS) -o $@
 
-post: main
-	$(MAKE) clean
+TestPerfectHash: TestPerfectHash.c $(SRC)/perfectHash.c $(SRC)/reads.c $(COMMON)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $^ $(LDFLAGS) $(LDLIBS) -o $@
 
-main: pre
-	 $(MAKE) --no-print-directory $(BIN)
+TestLlist: TestLlist.c $(SRC)/llist.c $(SRC)/reads.c $(COMMON)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $^ $(LDFLAGS) $(LDLIBS) -o $@
 
-TestLlist: TestLlist.c $(SRC)/llist.c $(SRC)/reads.c $(SRC)/log.c $(SRC)/mpiMD_utils.c
-	$(CC) $^ $(LB) -o $@ $(CFLAGS) $(INC) -D_GNU_SOURCE
-
-TestPerfectHash: TestPerfectHash.c $(SRC)/perfectHash.c $(SRC)/log.c $(SRC)/reads.c $(SRC)/mpiMD_utils.c
-	$(CC) $^ $(LB) -lcrypto  -lssl -o $@ $(CFLAGS) $(INC)
-
-TestList: TestList.c $(SRC)/readList.c  $(SRC)/reads.c
-	$(CC) $^ $(LB) -o $@ $(CFLAGS) $(INC)
-
-TestLBList: TestLBList.c $(SRC)/readList.c $(SRC)/reads.c $(SRC)/mpiMD_utils.c $(SRC)/log.c
-	$(CC) $^ $(LB) -o $@ $(CFLAGS) $(INC)
-
-TestUtils: TestUtils.c $(SRC)/mpiMD_utils.c $(SRC)/log.c
-	$(CC) $^ $(LB) -o $@ $(CFLAGS) $(INC)
-
-TestClusterFunctions : TestClusterFunctions.c $(SRC)/log.c $(SRC)/mark_duplicates.c $(SRC)/reads.c $(SRC)/mpiMD_utils.c $(SRC)/readList.c $(SRC)/perfectHash.c $(SRC)/createLBList.c
-	$(CC) $^ $(LB) -lcrypto -o $@ $(CFLAGS) $(INC)
-
-.PHONY=clean cov
-
-clean: 
-	-rm $(BIN) *.gcda *.gcno
-
-
+clean:
+	rm -f $(BIN) *.gcda *.gcno
