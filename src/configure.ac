@@ -52,9 +52,7 @@ AC_TYPE_UINT8_T
 AC_CHECK_LIB([m], [log2])
 AC_CHECK_LIB([m], [max])
 AC_CHECK_LIB([z], [inflate])
-AC_CHECK_LIB([crypto], [MD5_Init])
-AC_CHECK_LIB([crypto], [MD5_Update])
-AC_CHECK_LIB([crypto], [MD5_Final])
+AC_CHECK_LIB([crypto], [EVP_Digest])
 
 # Checks for library functions.
 AC_CHECK_FUNCS([malloc_trim])
