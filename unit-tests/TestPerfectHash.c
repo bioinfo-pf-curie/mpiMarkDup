@@ -202,6 +202,26 @@ static void PH_known_digests(void **state) {
     }
 }
 
+static void PH_detect_collision(void **state) {
+    (void)state;
+    readInfo a = {.Qname = "alpha", .pair_num = 1, .fingerprint = 42};
+    readInfo same = {.Qname = "alpha", .pair_num = 1, .fingerprint = 42};
+    readInfo other = {.Qname = "beta", .pair_num = 1, .fingerprint = 43};
+    readInfo *reads[] = {&a, NULL, &same, &other};
+    const readInfo *first, *second;
+    assert_int_equal(findFingerprintCollision(reads, 4, &first, &second), 0);
+    other.fingerprint = 42;
+    assert_int_equal(findFingerprintCollision(reads, 4, &first, &second), 1);
+    assert_string_equal(first->Qname, "alpha");
+    assert_string_equal(second->Qname, "beta");
+    other.Qname = "alpha";
+    other.pair_num = 2;
+    assert_int_equal(findFingerprintCollision(reads, 4, &first, &second), 1);
+    assert_int_equal(first->pair_num, 1);
+    assert_int_equal(second->pair_num, 2);
+    assert_int_equal(findFingerprintCollision(NULL, 0, &first, &second), 0);
+}
+
 int main(void) {
 
     const struct CMUnitTest PHPtr[] = {
@@ -209,6 +229,7 @@ int main(void) {
         cmocka_unit_test_setup_teardown(PH_conversion, PH_setup, PH_teardown),
         cmocka_unit_test_setup_teardown(PH_insert, PH_setup, PH_teardown),
         cmocka_unit_test(PH_known_digests),
+        cmocka_unit_test(PH_detect_collision),
     };
     return cmocka_run_group_tests(PHPtr, NULL, NULL);
 }

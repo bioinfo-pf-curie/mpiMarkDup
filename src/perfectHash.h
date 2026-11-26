@@ -41,7 +41,6 @@
 
 // use -lcrypto to compile
 // TODO:should be replaced by another open project
-#include <openssl/md5.h>
 #include <mpi.h>
 
 #include "reads.h"
@@ -69,6 +68,8 @@ typedef struct {
 // Utils
 size_t computeSpace(hashParam hp, int p, readInfo **arr, size_t size);
 int haveCollision(hashParam hp, int prime, size_t *arr, size_t size);
+int findFingerprintCollision(readInfo **arr, size_t size,
+                             const readInfo **first, const readInfo **second);
 void printPerfectHashTable(hashTable *htbl);
 
 // Conversion
