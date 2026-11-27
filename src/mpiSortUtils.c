@@ -291,7 +291,8 @@ int Create(skip_list *sl) {
 int Destroy(skip_list *sl) {
 	bool end; 
 	int i, j, maxLevel;
-	skip_node *tmp, *tmp2, *tmp3; 
+	skip_node *tmp, *tmp2, *tmp3;
+	skip_node *base_head, *base_tail;
 
 	if(Exist(*sl)) {
 		maxLevel = sl->head->level+1; 
@@ -299,6 +300,13 @@ int Destroy(skip_list *sl) {
 		while(tmp->level != 0) {
 			tmp = tmp->down; 
 		}
+		/* Create() allocates two level -1 nodes beneath the first layer. */
+		base_head = tmp->down;
+		tmp2 = sl->tail;
+		while (tmp2->level != 0) {
+			tmp2 = tmp2->down;
+		}
+		base_tail = tmp2->down;
 
 		for(j = 0; j < (sl->nElems+2); j++) {
 			tmp2 = tmp->next; 
@@ -315,7 +323,11 @@ int Destroy(skip_list *sl) {
 			tmp = tmp2; 
 		}
 
+		free(base_head);
+		free(base_tail);
 		sl->nElems = -1;
+		sl->head = NULL;
+		sl->tail = NULL;
 		return SUCCESS;
 	} else {
 		return ERROR_DESTROY;  
@@ -537,6 +549,5 @@ int deleteOneElement(skip_list *sl, int elem) {
 		return ELEMENT_NOT_FOUND; 
 	} 	
 }
-
 
 

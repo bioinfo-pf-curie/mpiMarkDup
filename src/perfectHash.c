@@ -196,7 +196,7 @@ size_t read2Fingerprint(readInfo *read) {
     char numInPair = digit2char(read->pair_num);
     // string to hash is <QNAME><numberInPair>
     assert(numInPair);
-    assert(strcat(buffer, &numInPair));
+    buffer[strlen(read->Qname)] = numInPair;
     buffer[strlen(read->Qname) + 1] = 0;
     buffer2 = buffer;
     size_t fingerprint = string2MD5(buffer2);
@@ -775,4 +775,3 @@ void shareHpAndConstructHtbl(hashTable *htbl, readInfo **arr, size_t size, MPI_C
 
     //MPI_Type_free(&hp_type);
 }
-

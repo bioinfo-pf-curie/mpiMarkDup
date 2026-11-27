@@ -523,8 +523,6 @@ int main (int argc, char *argv[]) {
         reads[i] = anchor[i];
     }
 
-    free(anchor);
-
     //We count how many reads we found
     size_t nb_reads_total = 0, nb_reads_global = 0;
     int j2 = 0;
@@ -726,7 +724,7 @@ int main (int argc, char *argv[]) {
                     				md_log_rank_debug(chosen_rank, "[MPISORT] Time to write chromosom %s ,  %f seconds \n\n\n", chrNames[nbchr - 2], MPI_Wtime() - time_count);
 
                     
-                    			while (reads[i]->next != NULL) {
+                    			while (reads[i] != NULL) {
                         			Read *tmp_chr = reads[i];
                         			reads[i] = reads[i]->next;
                         			free(tmp_chr);
@@ -1856,7 +1854,7 @@ int main (int argc, char *argv[]) {
                 free(local_offset_source_sorted_trimmed);
                 free(local_offset_dest_sorted_trimmed);
                 free(local_source_rank_sorted_trimmed);
-                //free(local_source_rank_sorted_trimmed_for_bruckv2);
+                free(local_source_rank_sorted_trimmed_for_bruckv2);
 
                 //local_readNum = first_local_readNum;
 
@@ -1944,6 +1942,7 @@ int main (int argc, char *argv[]) {
                                         1,
                                         MPI_LONG_LONG_INT,
                                         split_comm);
+                    free(disc_dup_by_rank);
 
                     MPI_Allreduce(local_disc_duplicate_number ,
                                     &max_disc_duplicates, 
@@ -2110,6 +2109,7 @@ int main (int argc, char *argv[]) {
                                         1,
                                         MPI_LONG_LONG_INT,
                                         split_comm);
+                    free(disc_dup_by_rank);
 
                     MPI_Allreduce(local_disc_duplicate_number ,
                                     &max_disc_duplicates, 
@@ -2224,6 +2224,11 @@ int main (int argc, char *argv[]) {
     MPI_Info_free(&finfo);
     free(goff);
     free(local_data);
+    /* The per-reference sentinel nodes are not consumed by the writers. */
+    for (i = 0; i < nbchr; i++) {
+        free(anchor[i]);
+    }
+    free(anchor);
     /*
     Read[i] is now free in 
     get_coordinates_and_offset_source_and_size_and_free_reads

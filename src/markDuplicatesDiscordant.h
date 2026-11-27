@@ -50,7 +50,11 @@ readInfo *readParsingDiscordant (char *sam_buff,
                                 size_t *disc_offsets_source,  
                                 MPI_Comm comm); 
 
-void exchangeExternFragDiscordant(llist_t *fragList, llist_t *readEndsList, hashTable *htbl, MPI_Comm comm);
+/* The caller owns the returned pointer array, its contiguous read storage,
+ * and each read's allocated fields until list and hash-table use is complete. */
+size_t exchangeExternFragDiscordant(llist_t *fragList, llist_t *readEndsList,
+                                   hashTable *htbl, MPI_Comm comm,
+                                   readInfo ***receivedMates);
 
 size_t parseLibrariesDiscordant(char *bufferReads, 
                                 Interval *intervalByProc, 

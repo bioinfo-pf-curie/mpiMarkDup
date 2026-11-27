@@ -454,6 +454,7 @@ readInfo *readParsing (char *sam_buff,
                 // secondary and supplementary alignment records are skipped and never flagged as duplicate.
                 if (supplementaryAlignment || secondaryAlignment) {
                     freeRead(read);
+                    free(read);
                     free(tokenCar);
                     return NULL;
                 }
@@ -461,6 +462,7 @@ readInfo *readParsing (char *sam_buff,
                 //unmapped : we ignore, we don't mark it according to Mark Duplicate
                 if (readUnmapped) {
                     freeRead(read);
+                    free(read);
                     free(tokenCar);
                     return NULL;
                 }
@@ -1220,12 +1222,13 @@ size_t exchangeAndFillMate_with_Bruck(readInfo ***matesByProc, mateInfo *mates, 
 
     size_t k = 0;
     size_t index = 0;
-
+    readInfo *receivedMates = totalrecv ? calloc(totalrecv, sizeof(readInfo)) : NULL;
+    assert(!totalrecv || receivedMates);
     for (n = 0; n < num_proc; n++) {
 
-        //if ( number_of_mates_by_procs[n] == 0) continue;    
+        if (number_of_mates_by_procs[n] == 0) continue;
         
-	readInfo *mate = calloc(number_of_mates_by_procs[n] , sizeof(readInfo));    
+	readInfo *mate = receivedMates + index;
 	
 	for (k = 0; k < number_of_mates_by_procs[n]; k++){
 
@@ -1379,11 +1382,13 @@ size_t exchangeAndFillMate_with_Bruck_v2(readInfo ***matesByProc,
     size_t k = 0;
     size_t index = 0;
 
+    readInfo *receivedMates = totalrecv ? calloc(totalrecv, sizeof(readInfo)) : NULL;
+    assert(!totalrecv || receivedMates);
     for (n = 0; n < num_proc; n++) {
 
-        if ( number_of_mates_by_procs[n] == 0) continue;    
+        if ( number_of_mates_by_procs[n] == 0) continue;
 
-	readInfo *mate = calloc(number_of_mates_by_procs[n] , sizeof(readInfo));
+	readInfo *mate = receivedMates + index;
 
         for (k = 0; k < number_of_mates_by_procs[n]; k++){
 
@@ -2264,10 +2269,11 @@ inline unsigned int readFlag2MateFlag(unsigned int readFlag) {
  *   @param[in] comm markDuplicate communicator
  */
 
-void exchangeExternFrag(llist_t *fragList, 
-                        llist_t *readEndsList, 
-                        hashTable *htbl, 
-                        MPI_Comm comm) {
+static size_t exchangeExternFrag(llist_t *fragList,
+                                 llist_t *readEndsList,
+                                 hashTable *htbl,
+                                 MPI_Comm comm,
+                                 readInfo ***receivedMates) {
 
     int rank;
     MPI_Comm_rank(comm, &rank);
@@ -2288,12 +2294,13 @@ void exchangeExternFrag(llist_t *fragList,
     readInfo **matesByProc;
     //int totalrecv = exchangeAndFillMate(&matesByProc, mates, numberOfExternalMate, comm);
     size_t totalrecv = exchangeAndFillMate_with_Bruck(&matesByProc, mates, numberOfExternalMate, comm);
+    *receivedMates = matesByProc;
     md_log_rank_debug(rank, "[mpiMD][exchangeExternFrag] Received %zu mates, fragList size = %d\n", totalrecv, fragList->size);
 
     free(mates);
 
     //test if we have nothing to do we return
-    if (totalrecv == 0) return; 
+    if (totalrecv == 0) return 0;
 
     /*
      *     FOR DEBUG
@@ -2345,6 +2352,7 @@ void exchangeExternFrag(llist_t *fragList,
 
             /* free fictitious mate */
             freeRead(mate);
+            free(mate);
             /* insert external mate, it is partially filled as a readInfo */
             hashTableInsert(htbl, matesByProc[i]);
 
@@ -2409,8 +2417,8 @@ void exchangeExternFrag(llist_t *fragList,
     }
     */
 
-    /* free external mates in current library, others reads are free in destroyLBList */
-    free(matesByProc);
+    /* The caller owns the received reads until the lists and table are done. */
+    return totalrecv;
 }
 
 /**
@@ -2518,7 +2526,9 @@ char *markDuplicate (char *bufferReads,
    
     	md_log_debug("Start to exchange mates ...\n");
     	timeStamp = MPI_Wtime();
-    	exchangeExternFrag(fragList, readEndsList, htbl, comm) ;
+        readInfo **receivedMates = NULL;
+        size_t receivedMateCount = exchangeExternFrag(
+            fragList, readEndsList, htbl, comm, &receivedMates);
 
     	/*
     	 * we update pairPhredScore in readEndsList
@@ -2603,7 +2613,8 @@ char *markDuplicate (char *bufferReads,
     	md_log_debug("Free data structures ...\n");
     	timeStamp = MPI_Wtime();
     	if (samTokenLines) free(samTokenLines);
-    	/* free all reads and fragList */
+    	/* Free fragment list nodes; reads are managed separately. */
+        llist_clear(fragList);
     	llist_destruct(fragList);
     	/* free all nodes of readEndsList */
     	llist_clear(readEndsList);
@@ -2611,10 +2622,20 @@ char *markDuplicate (char *bufferReads,
     	llist_destruct(readEndsList);
     	free(intervalByProc);
     	free(readNumByProc);
-        for ( j = 0; j < readNum; j++ ) if (readArr[j]) free(readArr[j]);
+        for (j = 0; j < readNum; j++) {
+            if (readArr[j]) {
+                freeRead(readArr[j]);
+                free(readArr[j]);
+            }
+        }
 	if (readArr) free(readArr);
     	freeChrInfo(&chr);
     	hashTableDestroy(htbl);
+        for (j = 0; j < receivedMateCount; j++) {
+            freeRead(receivedMates[j]);
+        }
+        if (receivedMateCount) free(receivedMates[0]);
+        free(receivedMates);
     	md_log_trace("Finished to free data structures in %f seconds\n", MPI_Wtime() - timeStamp);
     	md_log_debug("Total time spent in mark duplicates %f seconds\n", MPI_Wtime() - timeStart);
     	//md_set_log_comm(previousComm);
@@ -2624,8 +2645,3 @@ char *markDuplicate (char *bufferReads,
     MPI_Comm_free(&comm);
     return newBuff;
 }
-
-
-
-
-

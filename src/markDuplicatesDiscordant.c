@@ -376,6 +376,7 @@ readInfo *readParsingDiscordant (char *sam_buff,
                 // secondary and supplementary alignment records are skipped and never flagged as duplicate.
                 if (supplementaryAlignment || secondaryAlignment) {
                     freeRead(read);
+                    free(read);
                     free(tokenCar);
                     return NULL;
                 }
@@ -383,6 +384,7 @@ readInfo *readParsingDiscordant (char *sam_buff,
                 //unmapped : we ignore, we don't mark it according to Mark Duplicate
                 if (readUnmapped) {
                     freeRead(read);
+                    free(read);
                     free(tokenCar);
                     return NULL;
                 }
@@ -574,7 +576,9 @@ readInfo *readParsingDiscordant (char *sam_buff,
  *   @param[in] comm markDuplicate communicator
  */
 
-void exchangeExternFragDiscordant(llist_t *fragList, llist_t *readEndsList, hashTable *htbl, MPI_Comm comm) {
+size_t exchangeExternFragDiscordant(llist_t *fragList, llist_t *readEndsList,
+                                   hashTable *htbl, MPI_Comm comm,
+                                   readInfo ***receivedMates) {
 
     int rank;
     MPI_Comm_rank(comm, &rank);
@@ -595,13 +599,14 @@ void exchangeExternFragDiscordant(llist_t *fragList, llist_t *readEndsList, hash
     readInfo **matesByProc;
     //int totalrecv = exchangeAndFillMate(&matesByProc, mates, numberOfExternalMate, comm);
     size_t totalrecv = exchangeAndFillMate_with_Bruck_v2(&matesByProc, mates, numberOfExternalMate, comm);
+    *receivedMates = matesByProc;
 
     md_log_rank_debug(rank, "[mpiMD][exchangeExternFragDiscordant] Received %zu mates, fragList size = %d\n", totalrecv, fragList->size);
 
     free(mates);
 
     //test if we have nothing to do we return
-    if (totalrecv == 0) return; 
+    if (totalrecv == 0) return 0;
 
     int mateCounter = 0;
     for (size_t i = 0; i < totalrecv; i++) {
@@ -633,6 +638,7 @@ void exchangeExternFragDiscordant(llist_t *fragList, llist_t *readEndsList, hash
 
             /* free fictitious mate */
             freeRead(mate);
+            free(mate);
             /* insert external mate, it is partially filled as a readInfo */
             hashTableInsert(htbl, matesByProc[i]);
             
@@ -676,8 +682,8 @@ void exchangeExternFragDiscordant(llist_t *fragList, llist_t *readEndsList, hash
         node->read->mateIndexAfterSort = mate->indexAfterSort;
        
     }
-    /* free external mates in current library, others reads are free in destroyLBList */
-    free(matesByProc);
+    /* The caller retains the array until the lists and hash table are finished. */
+    return totalrecv;
 }
 
 /**
@@ -875,7 +881,9 @@ char *markDuplicateDiscordant (char *bufferReads,
 
     		md_log_debug("Start to exchange mates ...\n");
     		timeStamp = MPI_Wtime();
-        	exchangeExternFragDiscordant(fragList, readEndsList, htbl, comm) ;
+                readInfo **receivedMates = NULL;
+                size_t receivedMateCount = exchangeExternFragDiscordant(
+                    fragList, readEndsList, htbl, comm, &receivedMates);
     
     		md_log_debug("Finished to exchange mate in %f seconds\n", MPI_Wtime() - timeStamp);
     		md_log_debug("Start to sort fragments list and read ends list ...\n");
@@ -967,14 +975,26 @@ char *markDuplicateDiscordant (char *bufferReads,
     		*disc_dup_offset_source =  disc_dup_offset_source_tmp;
     		*disc_dup_number = index_in_offset;
 
-     		/* free all reads and fragList */
+     		/* Free fragment list nodes; reads are managed separately. */
+                llist_clear(fragList);
     		llist_destruct(fragList);
     		/* free all nodes of readEndsList */
     		llist_clear(readEndsList);
     		/* free readEndsList */
     		llist_destruct(readEndsList);
 
-    		for (j = 0; j < readNum; j++) if (readArr[j]) free(readArr[j]);
+                for (j = 0; j < receivedMateCount; j++) {
+                    freeRead(receivedMates[j]);
+                }
+                if (receivedMateCount) free(receivedMates[0]);
+                free(receivedMates);
+
+    		for (j = 0; j < readNum; j++) {
+                    if (readArr[j]) {
+                        freeRead(readArr[j]);
+                        free(readArr[j]);
+                    }
+                }
     		free(readArr);
 
     		//*disc_dup_offset_source = NULL;
@@ -989,4 +1009,3 @@ char *markDuplicateDiscordant (char *bufferReads,
 
     	return newBuff;
 }
-
