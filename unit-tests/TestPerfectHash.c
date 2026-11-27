@@ -79,7 +79,8 @@ static int PH_teardown(void **state) {
 
     hashTableDestroy(htbl);
     for (int i = 0; i < TABLE_SIZE; ++i) {
-        freeRead(reads[i]);   
+        freeRead(reads[i]);
+        free(reads[i]);
     }
     free(reads);
     free(test);
@@ -174,6 +175,7 @@ static void PH_insert(void **state) {
     /** Test hashTableInsert **/
     // insert in the same place, so free first
     freeRead(reads[0]);
+    free(reads[0]);
     r1 = readsInit(0, 1);
     reads[0] = r1;
     hashTableInsert(htbl, r1);

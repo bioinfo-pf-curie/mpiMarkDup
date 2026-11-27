@@ -3303,7 +3303,8 @@ void writeSam_unmapped(
     if (split_rank == 0) {
         free(fp_header->uncompressed_block);
         free(fp_header->compressed_block);
-        free_cache(fp_header);
+        /* free_cache() only destroys caches opened for reading. */
+        kh_destroy(cache, fp_header->cache);
     }
 
     free(fp_header);
@@ -7534,7 +7535,6 @@ size_t *writeSam_any_dim_discordant(
 
 
 }
-
 
 
 

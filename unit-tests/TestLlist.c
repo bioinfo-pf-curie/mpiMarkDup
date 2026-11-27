@@ -47,6 +47,7 @@ static int llist_teardown(void **state) {
 
     for (int i = 0; i < 10; i++) {
         freeRead(reads[i]);
+        free(reads[i]);
     }
 
     llist_clear(list);
