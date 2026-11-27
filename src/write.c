@@ -1775,7 +1775,12 @@ void writeSam(
     	//now we write the magic number end
     	
     	if (rank == master_job_phase_2 ) {
-        	static uint8_t magic[28] = "\037\213\010\4\0\0\0\0\0\377\6\0\102\103\2\0\033\0\3\0\0\0\0\0\0\0\0\0";
+        	static const uint8_t magic[28] = {
+                    0x1f, 0x8b, 0x08, 0x04, 0x00, 0x00, 0x00, 0x00,
+                    0x00, 0xff, 0x06, 0x00, 0x42, 0x43, 0x02, 0x00,
+                    0x1b, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00,
+                    0x00, 0x00, 0x00, 0x00
+                };
         	//md_log_rank_debug(master_job_phase_2, "[WRITE] we write EOF \n");
         	MPI_File_seek(out, 0, MPI_SEEK_END);
         	MPI_File_write(out, magic, 28, MPI_BYTE, MPI_STATUS_IGNORE);
@@ -2875,7 +2880,12 @@ size_t * writeSam_discordant(
     	//MPI_Info_set(finfo,"cb_buffer_size","2684354560"); /* 128 MBytes (Optional) */
     	
     	if (rank == master_job_phase_2 ) {
-        	static uint8_t magic[28] = "\037\213\010\4\0\0\0\0\0\377\6\0\102\103\2\0\033\0\3\0\0\0\0\0\0\0\0\0";
+        	static const uint8_t magic[28] = {
+                    0x1f, 0x8b, 0x08, 0x04, 0x00, 0x00, 0x00, 0x00,
+                    0x00, 0xff, 0x06, 0x00, 0x42, 0x43, 0x02, 0x00,
+                    0x1b, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00,
+                    0x00, 0x00, 0x00, 0x00
+                };
         	//md_log_rank_debug(master_job_phase_2, "[WRITE] we write EOF \n");
         	MPI_File_seek(out, 0, MPI_SEEK_END);
         	MPI_File_write(out, magic, 28, MPI_BYTE, MPI_STATUS_IGNORE);
@@ -3280,7 +3290,12 @@ void writeSam_unmapped(
 
     if (split_rank == 0 ) {
         
-        static uint8_t magic[28] = "\037\213\010\4\0\0\0\0\0\377\6\0\102\103\2\0\033\0\3\0\0\0\0\0\0\0\0\0";
+        static const uint8_t magic[28] = {
+            0x1f, 0x8b, 0x08, 0x04, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0xff, 0x06, 0x00, 0x42, 0x43, 0x02, 0x00,
+            0x1b, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00
+        };
         md_log_rank_debug(split_rank, "[WRITE] we write EOF \n");
         MPI_File_seek(out, 0, MPI_SEEK_END);
         MPI_File_write(out, magic, 28, MPI_BYTE, MPI_STATUS_IGNORE);
@@ -7535,7 +7550,6 @@ size_t *writeSam_any_dim_discordant(
 
 
 }
-
 
 
 

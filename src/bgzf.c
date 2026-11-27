@@ -114,7 +114,10 @@ report_error(BGZF* fp, const char* message) {
 int bgzf_check_bgzf(const char *fn)
 {
     BGZF *fp;
-    uint8_t buf[10],magic[10]="\037\213\010\4\0\0\0\0\0\377";
+    uint8_t buf[10];
+    static const uint8_t magic[10] = {
+        0x1f, 0x8b, 0x08, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff
+    };
     int n;
 
     if ((fp = bgzf_open(fn, "r")) == 0) 
@@ -667,7 +670,12 @@ void bgzf_set_cache_size(BGZF *fp, int cache_size)
 
 int bgzf_check_EOF(BGZF *fp)
 {
-	static uint8_t magic[28] = "\037\213\010\4\0\0\0\0\0\377\6\0\102\103\2\0\033\0\3\0\0\0\0\0\0\0\0\0";
+	static const uint8_t magic[28] = {
+        0x1f, 0x8b, 0x08, 0x04, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0xff, 0x06, 0x00, 0x42, 0x43, 0x02, 0x00,
+        0x1b, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00
+    };
 	uint8_t buf[28];
 	off_t offset;
 #ifdef _USE_KNETFILE
